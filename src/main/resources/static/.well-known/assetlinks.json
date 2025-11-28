@@ -1,0 +1,14 @@
+[
+  {
+    "relation": [
+      "delegate_permission/common.handle_all_urls"
+    ],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "cl.clinipets",
+      "sha256_cert_fingerprints": [
+        "D4:ED:E3:97:76:48:72:C4:C7:6A:2B:C9:BC:9D:AC:71:46:D7:2F:A2:11:A9:0C:1E:02:53:47:54:EE:13:8D:BE"
+      ]
+    }
+  }
+]

@@ -1,0 +1,112 @@
+stages:
+  - build
+  - deploy
+
+variables:
+  DOCKER_HOST: "tcp://docker:2375"
+  DOCKER_TLS_CERTDIR: ""
+  DOCKER_DRIVER: "overlay2"
+  BACKEND_IMAGE_LATEST: "$CI_REGISTRY_IMAGE/backend:latest"
+  BACKEND_IMAGE_SHA: "$CI_REGISTRY_IMAGE/backend:$CI_COMMIT_SHORT_SHA"
+  GRADLE_OPTS: "-Dorg.gradle.daemon=false"
+
+# Imagen base para construir docker dentro de docker
+.docker-dind:
+  image: docker:24.0.5
+  services:
+    - name: docker:24.0.5-dind
+
+# Build Backend
+build-backend:
+  stage: build
+  extends: .docker-dind
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  script:
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+    - docker build -t "$BACKEND_IMAGE_LATEST" -t "$BACKEND_IMAGE_SHA" -f Dockerfile .
+    - docker push "$BACKEND_IMAGE_LATEST"
+    - docker push "$BACKEND_IMAGE_SHA"
+  artifacts:
+    expire_in: 1 week
+    paths:
+      - Dockerfile
+
+# Deploy SSH
+deploy:
+  stage: deploy
+  needs: [ "build-backend" ]
+  image: alpine:3.20
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+  before_script:
+    - apk add --no-cache openssh-client docker-cli
+    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
+    - printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+    - sed -i 's/\r$//' ~/.ssh/id_deploy && chmod 600 ~/.ssh/id_deploy
+    - SERVER_USER="${SERVER_USER}"; SERVER_IP="${SERVER_IP}"; SERVER_PATH="${SERVER_PATH}"; PORT="${SERVER_SSH_PORT:-22}"; export SERVER_USER SERVER_IP SERVER_PATH PORT
+    - echo "[INFO] Deploy -> USER=$SERVER_USER IP=$SERVER_IP PATH=$SERVER_PATH PORT=$PORT"
+    - test -n "$SERVER_USER" && test -n "$SERVER_IP" && test -n "$SERVER_PATH" || { echo '[ERROR] Faltan variables'; exit 1; }
+    - ssh-keyscan -p "$PORT" "$SERVER_IP" 2>/dev/null >> ~/.ssh/known_hosts || true
+  script:
+    - echo "[INFO] Verificando conexión SSH";
+    - ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy -p "$PORT" "$SERVER_USER@$SERVER_IP" "echo '[REMOTE] Conexión OK'; whoami; hostname" || { echo '[ERROR] SSH falló'; exit 1; }
+
+    - echo "[INFO] Resolviendo directorio remoto...";
+    - |
+      SERVER_PATH_RESOLVED=$(ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy -p "$PORT" "$SERVER_USER@$SERVER_IP" "\
+        if mkdir -p '$SERVER_PATH' 2>/dev/null; then echo '$SERVER_PATH'; \
+        elif command -v sudo >/dev/null 2>&1 && sudo mkdir -p '$SERVER_PATH' 2>/dev/null; then sudo chown $SERVER_USER:$SERVER_USER '$SERVER_PATH' 2>/dev/null || true; echo '$SERVER_PATH'; \
+        else mkdir -p \"\$HOME/clinipets\" && echo \"\$HOME/clinipets\"; fi")
+      echo "[INFO] PATH_RESOLVED=$SERVER_PATH_RESOLVED"
+
+    - echo "[INFO] Copiando docker-compose.yml";
+    - scp -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy -P "$PORT" docker-compose.yml "$SERVER_USER@$SERVER_IP:$SERVER_PATH_RESOLVED/docker-compose.yml"
+
+    - echo "[INFO] Generando .env remoto y desplegando";
+    - |
+      ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_deploy -p "$PORT" "$SERVER_USER@$SERVER_IP" "
+        set -e; cd '$SERVER_PATH_RESOLVED';
+      
+        echo '[REMOTE] Docker login'; 
+        docker login -u '$CI_REGISTRY_USER' -p '$CI_REGISTRY_PASSWORD' '$CI_REGISTRY' || true;
+      
+        # Determinar imagen a usar (SHA o Latest)
+        if docker manifest inspect '$BACKEND_IMAGE_SHA' >/dev/null 2>&1; then IMG='$BACKEND_IMAGE_SHA'; else echo '[REMOTE] Tag SHA no existe, usando latest'; IMG='$BACKEND_IMAGE_LATEST'; fi;
+      
+        # --- GENERACION DE ARCHIVO .ENV ---
+        # Las variables \$IMG se escapan para usarse en el remoto.
+        # Las variables como $DB_PASSWORD se expanden AQUI (en GitLab CI) antes de enviar el comando.
+        echo '[REMOTE] Creando archivo .env con secretos...';
+        cat <<EOF > .env
+      BACKEND_IMAGE=\$IMG
+      DB_USER=$DB_USER
+      DB_PASSWORD=$DB_PASSWORD
+      DB_NAME=$DB_NAME
+      JWT_SECRET=$JWT_SECRET
+      JWT_REFRESH_SECRET=$JWT_REFRESH_SECRET
+      GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID
+      EOF
+      
+        # Determinar comando compose
+        if command -v docker compose >/dev/null 2>&1; then COMPOSE='docker compose'; else COMPOSE='docker-compose'; fi;
+      
+        echo '[REMOTE] Levantando servicios...';
+        \$COMPOSE down --remove-orphans || true; 
+        \$COMPOSE up -d --remove-orphans;
+      
+        echo '---------------------------------------------------';
+        echo '[REMOTE] Estado contenedores:';
+        docker ps -a --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}';
+      
+        # Diagnostico rapido si el backend muere rapido
+        sleep 2;
+        if ! docker ps | grep -q 'clinipets-app'; then
+          echo '[ERROR] El backend no está corriendo. Mostrando logs:';
+          \$COMPOSE logs --tail=50 app; 
+          exit 1;
+        fi
+      "
+    - echo "[INFO] Deploy finalizado exitosamente"
+  environment:
+    name: production

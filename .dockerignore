@@ -1,0 +1,41 @@
+# Archivos/carpetas que no se necesitan en el contexto de docker build
+# Evitar borrar gradle/ ni gradlew, necesarios para el wrapper
+auth/
+.git
+.git/**
+.gitignore
+.gitattributes
+.idea
+*.iml
+**/.DS_Store
+
+# Gradle caches y outputs
+.gradle
+.gradle/**
+build
+build/**
+out
+out/**
+
+# Node (por si existe frontend dentro del repo)
+node_modules
+node_modules/**
+
+# Logs y temporales
+*.log
+**/*.log
+.tmp
+**/.env
+**/.env.*
+
+# Mantener explícitamente estos archivos en el contexto
+!../clinipets-backend/Dockerfile
+!.dockerignore
+!gradlew
+!gradlew.bat
+!gradle/**
+!settings.gradle.kts
+!build.gradle.kts
+!gradle.properties
+!src/**
+!build/libs/*.jar

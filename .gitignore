@@ -1,0 +1,33 @@
+# Ignore environment files
+.env
+.env.*
+
+# Gradle
+.gradle/
+build/
+out/
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Certs/keys (no subir secretos)
+certs/
+*.pem
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.jks
+
+/clinipets.pem
+/entityManagerFactory(EntityManagerFactoryBuilder, PersistenceManagedTypes).md
