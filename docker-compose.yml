@@ -23,55 +23,70 @@ services:
   app:
     image: ${BACKEND_IMAGE}
     container_name: clinipets-app
-    build: . # Esto permite hacer 'docker-compose build' si tienes el Dockerfile ahí
+    build: .
     environment:
       SPRING_PROFILES_ACTIVE: prod
-      # Conexión DB Normalizada
-      DB_HOST: db
-      DB_PORT: ${DB_PORT}
-      DB_NAME: ${DB_NAME}
-      DB_USER: ${DB_USER}
-      DB_PASSWORD: ${DB_PASSWORD}
-      # Secretos inyectados desde .env
+      # --- CORRECCIÓN: Usamos la URL directa para evitar errores de mapeo ---
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME}
+      SPRING_DATASOURCE_USERNAME: ${DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
+      # --------------------------------------------------------------------
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN}
       N8N_API_KEY: ${N8N_API_KEY}
-      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL}
+      # N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL} # Descomenta si lo usas en el código
     ports:
       - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
-    restart: no
+    # Healthcheck robusto (Actuator)
     healthcheck:
-      # Usa curl para llamar al endpoint de Actuator.
-      # Si devuelve 200 OK, está sano. Si falla (exit 1), está enfermo.
       test: "curl -f http://localhost:8080/actuator/health || exit 1"
-      interval: 30s      # Preguntar cada 30 segundos
-      timeout: 10s       # Esperar máximo 10s respuesta
-      retries: 3         # Si falla 3 veces seguidas -> RESTART
-      start_period: 40s  # Darle 40s de gracia al inicio para que arranque Java
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
 
-
-  # 3. n8n (El Orquestador de Automatización)
+  # 3. n8n (El Orquestador)
   n8n:
-    image: n8nio/n8n
+    image: docker.n8n.io/n8nio/n8n
     container_name: clinipets-n8n
     ports:
       - "5678:5678"
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=washona # ¡Cámbialo al entrar!
+      - N8N_BASIC_AUTH_PASSWORD=washona
       - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      # Esto es importante para los Webhooks locales
       - WEBHOOK_URL=http://localhost:5678/
     volumes:
       - n8n_data:/home/node/.n8n
     restart: unless-stopped
 
+  # 4. SonarQube (Configuración "Vibe Coding")
+  sonarqube:
+    image: sonarqube:community
+    container_name: clinipets-sonar
+    ports:
+      - "9000:9000"
+    environment:
+      # --- TRUCO: Usamos DB interna (H2) para evitar conflictos con Postgres ---
+      # Al quitar las variables JDBC, Sonar entiende que es modo "Prueba"
+      # Desactivamos chequeos estrictos de memoria para que levante fácil
+      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_extensions:/opt/sonarqube/extensions
+      - sonar_logs:/opt/sonarqube/logs
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   n8n_data:
+  sonar_data:
+  sonar_extensions:
+  sonar_logs:

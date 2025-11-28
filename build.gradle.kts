@@ -5,11 +5,20 @@ plugins {
     id("io.spring.dependency-management") version "1.1.7"
     kotlin("plugin.jpa") version "1.9.25"
     id("jacoco")
+    id("org.sonarqube") version "7.1.0.6387"
 }
 
 group = "cl.clinipets"
 version = "0.0.1-SNAPSHOT"
 description = "backend"
+
+sonar {
+    properties {
+        property("sonar.projectKey", "clinipets-backend")
+        property("sonar.host.url", "http://localhost:9000")
+        property("sonar.login", System.getProperty("sonar.token"))
+    }
+}
 
 java {
     toolchain {
