@@ -67,6 +67,9 @@ dependencies {
     // Matchers seguros para Kotlin
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.4.0")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+
+    // Logging JSON
+    implementation("net.logstash.logback:logstash-logback-encoder:7.4")
 }
 
 kotlin {

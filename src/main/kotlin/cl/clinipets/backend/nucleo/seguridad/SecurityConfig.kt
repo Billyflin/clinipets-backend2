@@ -3,7 +3,6 @@ package cl.clinipets.backend.nucleo.seguridad
 import cl.clinipets.backend.identidad.dominio.Roles
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
-import org.springframework.context.annotation.Profile
 import org.springframework.core.env.Environment
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
@@ -14,7 +13,6 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration
 @EnableMethodSecurity
-@Profile("!test")
 class SecurityConfig(
     private val jwtFilter: JwtAuthFilter,
     private val env: Environment
