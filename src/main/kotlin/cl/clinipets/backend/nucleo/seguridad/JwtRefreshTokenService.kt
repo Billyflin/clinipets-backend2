@@ -17,21 +17,21 @@ import java.util.*
 
 @Component
 class JwtRefreshTokenService(
-    @Value("\${jwt.refresh.secret}") private val secretB64: String,
+    @Value("\${jwt.refresh-secret}") private val secretB64: String,
     @Value("\${jwt.issuer}") private val issuer: String,
-    @Value("\${jwt.refresh.expiration-days}") private val expirationDays: Long,
-    @Value("\${jwt.refresh.cookie-name}") private val cookieName: String,
-    @Value("\${jwt.refresh.cookie-domain:}") private val cookieDomain: String,
-    @Value("\${jwt.refresh.cookie-secure:false}") private val cookieSecure: Boolean,
-    @Value("\${jwt.refresh.cookie-same-site:Lax}") private val cookieSameSite: String,
-    @Value("\${jwt.refresh.cookie-path:/}") private val cookiePath: String
+    @Value("\${jwt.refresh-expiration-hours:168}") private val expirationHours: Long,
+    @Value("\${jwt.cookie-name:clinipets-refresh}") private val cookieName: String,
+    @Value("\${jwt.cookie-domain:}") private val cookieDomain: String,
+    @Value("\${jwt.cookie-secure:false}") private val cookieSecure: Boolean,
+    @Value("\${jwt.cookie-same-site:Lax}") private val cookieSameSite: String,
+    @Value("\${jwt.cookie-path:/}") private val cookiePath: String
 ) : RefreshTokenService {
-    private val key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(secretB64))
+    private val key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(secretB64.trim()))
 
     override fun issue(userId: UUID, email: String, roles: List<String>): String {
         require(email.isNotBlank()) { "El email no puede estar vacío" }
         val now = Date.from(Instant.now())
-        val exp = Date.from(Instant.now().plusSeconds(Duration.ofDays(expirationDays).seconds))
+        val exp = Date.from(Instant.now().plusSeconds(Duration.ofHours(expirationHours).seconds))
         return Jwts.builder()
             .subject(userId.toString())
             .issuer(issuer)
@@ -90,7 +90,7 @@ class JwtRefreshTokenService(
             .httpOnly(true)
             .secure(cookieSecure)
             .path(cookiePath)
-            .maxAge(Duration.ofDays(expirationDays))
+            .maxAge(Duration.ofHours(expirationHours))
             .sameSite(cookieSameSite)
         if (cookieDomain.isNotBlank()) builder.domain(cookieDomain)
         val cookie = builder.build()

@@ -18,7 +18,7 @@ class JwtTokenService(
     @param:Value("\${jwt.issuer}") private val issuer: String,
     @param:Value("\${jwt.expiration-minutes}") private val expMinutes: Long
 ) : TokenService {
-    private val key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(secretB64))
+    private val key = Keys.hmacShaKeyFor(Base64.getDecoder().decode(secretB64.trim()))
 
     override fun issue(userId: UUID, email: String, roles: List<String>, nombre: String?, fotoUrl: String?): String {
         require(email.isNotBlank()) { "El email no puede estar vacío" }

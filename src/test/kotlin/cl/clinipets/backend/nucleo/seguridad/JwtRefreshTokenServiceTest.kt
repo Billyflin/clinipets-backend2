@@ -8,10 +8,10 @@ import java.util.*
 
 class JwtRefreshTokenServiceTest {
 
-    private fun service(days: Long = 30): RefreshTokenService = JwtRefreshTokenService(
+    private fun service(hours: Long = 720): RefreshTokenService = JwtRefreshTokenService(
         secretB64 = BASE64_SECRET,
         issuer = "test-issuer",
-        expirationDays = days,
+        expirationHours = hours,
         cookieName = "clinipets_rft",
         cookieDomain = "",
         cookieSecure = false,
@@ -21,7 +21,7 @@ class JwtRefreshTokenServiceTest {
 
     @Test
     fun `issue y parse funcionan en refresh valido`() {
-        val svc = service(30)
+        val svc = service(720)
         val uid = UUID.randomUUID()
         val token = svc.issue(uid, "user@test.cl", listOf("CLIENTE"))
         val payload = svc.parse(token)
@@ -32,7 +32,7 @@ class JwtRefreshTokenServiceTest {
 
     @Test
     fun `parse falla con refresh expirado`() {
-        val svc = service(days = -1)
+        val svc = service(hours = -24)
         val token = svc.issue(UUID.randomUUID(), "user@test.cl", listOf("CLIENTE"))
         val ex = assertThrows(BadCredentialsException::class.java) {
             svc.parse(token)

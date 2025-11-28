@@ -29,7 +29,7 @@ import java.util.*
 class AuthController(
     private val auth: AuthService,
     private val refresh: RefreshTokenService,
-    @Value("\${jwt.refresh.cookie-name}") private val refreshCookieName: String
+    @Value("\${jwt.cookie-name:clinipets-refresh}") private val refreshCookieName: String
 ) {
 
     @Schema(description = "Respuesta devuelta tras un login exitoso.")
