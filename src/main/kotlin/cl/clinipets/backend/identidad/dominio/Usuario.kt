@@ -12,8 +12,13 @@ class Usuario(
     @GeneratedValue(strategy = GenerationType.UUID)
     var id: UUID? = null,
 
-    @Column(nullable = false, unique = true)
-    var email: String,
+    @Column(unique = true)
+    var email: String? = null,
+
+    @Column(name = "es_provisional", nullable = false)
+    var esProvisional: Boolean = false,
+
+    var telefono: String? = null,
 
     var nombre: String? = null,
     var fotoUrl: String? = null,

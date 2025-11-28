@@ -4,6 +4,7 @@ import cl.clinipets.backend.identidad.dominio.Roles
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.context.annotation.Profile
+import org.springframework.core.env.Environment
 import org.springframework.http.HttpMethod
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -14,11 +15,22 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableMethodSecurity
 @Profile("!test")
-class SecurityConfig(private val jwtFilter: JwtAuthFilter) {
+class SecurityConfig(
+    private val jwtFilter: JwtAuthFilter,
+    private val env: Environment
+) {
 
     @Bean
-    fun filterChain(http: HttpSecurity): SecurityFilterChain =
-        http
+    fun filterChain(http: HttpSecurity): SecurityFilterChain {
+        if (env.activeProfiles.contains("dev")) {
+            return http
+                .csrf { it.disable() }
+                .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
+                .authorizeHttpRequests { it.anyRequest().permitAll() }
+                .build()
+        }
+
+        return http
             .csrf { it.disable() }
             .sessionManagement { it.sessionCreationPolicy(SessionCreationPolicy.STATELESS) }
             .authorizeHttpRequests {
@@ -117,4 +129,5 @@ class SecurityConfig(private val jwtFilter: JwtAuthFilter) {
             }
             .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter::class.java)
             .build()
+    }
 }

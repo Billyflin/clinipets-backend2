@@ -37,8 +37,13 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-hibernate6")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
     // Google ID Token verification
-    implementation("com.google.api-client:google-api-client:2.6.0")
+    implementation("com.google.api-client:google-api-client:2.8.1")
     implementation("com.google.http-client:google-http-client-jackson2:1.43.3")
+
+    implementation("com.google.guava:guava:32.0.1-jre")
+
+    implementation("com.mercadopago:sdk-java:2.8.0")
+
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
@@ -70,10 +75,13 @@ allOpen {
     annotation("jakarta.persistence.Entity")
     annotation("jakarta.persistence.MappedSuperclass")
     annotation("jakarta.persistence.Embeddable")
+    annotation("org.springframework.stereotype.Service")
+    annotation("org.springframework.stereotype.Component")
 }
 
 tasks.withType<Test> {
     useJUnitPlatform()
+    jvmArgs("-XX:+EnableDynamicAgentLoading", "-Djdk.attach.allowAttachSelf=true")
     // Mostrar más contexto al ejecutar tests
     testLogging {
         events = setOf(

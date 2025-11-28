@@ -113,16 +113,19 @@ class AuthService(
 
     private fun buildSessionTokens(user: Usuario): SessionTokens {
         val roles = user.roles.map { it.nombre }.ifEmpty { listOf(Roles.CLIENTE) }
+        // Si el usuario es provisional, usamos su ID o un placeholder para el "email" en el token
+        val emailForToken = user.email ?: "provisional-${user.id}"
+        
         val accessToken = tokens.issue(
             userId = user.id!!,
-            email = user.email,
+            email = emailForToken,
             roles = roles,
             nombre = user.nombre,
             fotoUrl = user.fotoUrl
         )
         val refreshToken = refreshTokens.issue(
             userId = user.id!!,
-            email = user.email,
+            email = emailForToken,
             roles = roles
         )
         val accessPayload = tokens.parse(accessToken)
@@ -137,7 +140,7 @@ class AuthService(
             refreshTokenExpiresAt = refreshPayload.exp?.toInstant(),
             usuario = UsuarioInfo(
                 id = user.id!!,
-                email = user.email,
+                email = emailForToken,
                 nombre = user.nombre,
                 fotoUrl = user.fotoUrl,
                 roles = roles
