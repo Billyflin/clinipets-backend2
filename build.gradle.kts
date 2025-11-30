@@ -15,9 +15,9 @@ description = "backend"
 sonar {
     properties {
         property("sonar.projectKey", "clinipets-backend")
-        property("sonar.host.url", "http://localhost:9000")
+        property("sonar.host.url", "http://homeserver.local:9000")
         property("sonar.login", System.getProperty("sonar.token"))
-    }
+        }
 }
 
 java {
