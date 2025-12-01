@@ -34,7 +34,8 @@ class SecurityConfig(
                     "/actuator/health",
                     "/index.html",
                     "/google-login.html",
-                    "/static/**"
+                    "/static/**",
+                    "/v3/api-docs"
                 ).permitAll()
                     .anyRequest().authenticated()
             }

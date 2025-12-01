@@ -25,7 +25,7 @@ services:
     container_name: clinipets-app
     build: .
     environment:
-      SPRING_PROFILES_ACTIVE: prod
+      SPRING_PROFILES_ACTIVE: dev
       # --- CORRECCIÓN: Usamos la URL directa para evitar errores de mapeo ---
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME}
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
