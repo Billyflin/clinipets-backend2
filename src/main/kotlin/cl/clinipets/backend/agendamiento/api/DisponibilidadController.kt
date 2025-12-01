@@ -4,13 +4,13 @@ import cl.clinipets.backend.agendamiento.application.DisponibilidadService
 import cl.clinipets.backend.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
-import org.springframework.format.annotation.DateTimeFormat
+import io.swagger.v3.oas.annotations.Operation
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
-import java.time.LocalDate
+import java.time.Instant
 import java.util.UUID
 
 @RestController
@@ -19,9 +19,10 @@ class DisponibilidadController(
     private val disponibilidadService: DisponibilidadService,
     private val servicioMedicoRepository: ServicioMedicoRepository
 ) {
+    @Operation(summary = "Obtener disponibilidad", operationId = "obtenerDisponibilidad")
     @GetMapping
     fun obtener(
-        @RequestParam("fecha") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fecha: LocalDate,
+        @RequestParam("fecha") fecha: Instant,
         @RequestParam("servicioId") servicioId: UUID
     ): ResponseEntity<DisponibilidadResponse> {
         val servicio = servicioMedicoRepository.findById(servicioId)

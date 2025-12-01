@@ -1,11 +1,10 @@
 package cl.clinipets.backend.agendamiento.api
 
-import java.time.LocalDate
-import java.time.LocalTime
+import java.time.Instant
 import java.util.UUID
 
 data class DisponibilidadResponse(
-    val fecha: LocalDate,
+    val fecha: Instant,
     val servicioId: UUID,
-    val slots: List<LocalTime>
+    val slots: List<Instant>
 )

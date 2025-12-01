@@ -26,7 +26,8 @@ import org.springframework.test.context.TestPropertySource
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
+import java.time.LocalTime
+import java.time.ZoneId
 import java.util.UUID
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
@@ -98,7 +99,8 @@ class ReservaServiceTest(
                 nombre = "Firulais",
                 especie = Especie.PERRO,
                 pesoActual = BigDecimal("8.5"),
-                fechaNacimiento = LocalDate.of(2022, 5, 10),
+                // Usamos Instant para fecha de nacimiento (ej. start of day UTC o similar)
+                fechaNacimiento = LocalDate.of(2022, 5, 10).atStartOfDay(ZoneId.systemDefault()).toInstant(),
                 tutor = tutor
             )
         )
@@ -106,7 +108,11 @@ class ReservaServiceTest(
 
     @Test
     fun `crear reserva genera payment url y cita pendiente`() {
-        val inicio = siguienteSabadoAMas(LocalDate.now()).atTime(10, 0)
+        // Buscamos siguiente sabado
+        val fechaSabado = siguienteSabadoAMas(LocalDate.now())
+        // Convertimos a Instant a las 11:00 (HorarioClinica abre Sabado a las 10:00, cierra 19:00. 11:00 es válido)
+        val inicio = fechaSabado.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
+        
         val result = reservaService.crearReserva(
             servicioId = servicio.id!!,
             mascotaId = mascota.id!!,
@@ -123,7 +129,7 @@ class ReservaServiceTest(
 
     private fun siguienteSabadoAMas(hoy: LocalDate): LocalDate {
         var fecha = hoy
-        while (fecha.dayOfWeek.value != 6) {
+        while (fecha.dayOfWeek.value != 6) { // 6 is Saturday
             fecha = fecha.plusDays(1)
         }
         return fecha

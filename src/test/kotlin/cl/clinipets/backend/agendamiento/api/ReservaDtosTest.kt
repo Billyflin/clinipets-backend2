@@ -5,7 +5,8 @@ import cl.clinipets.backend.agendamiento.domain.EstadoCita
 import cl.clinipets.backend.agendamiento.domain.OrigenCita
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import java.time.LocalDateTime
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
@@ -16,7 +17,7 @@ class ReservaDtosTest {
     fun `ReservaCreateRequest should be correctly instantiated`() {
         val servicioId = UUID.randomUUID()
         val mascotaId = UUID.randomUUID()
-        val fechaHoraInicio = LocalDateTime.now()
+        val fechaHoraInicio = Instant.now()
         val origen = OrigenCita.WEB
 
         val request = ReservaCreateRequest(servicioId, mascotaId, fechaHoraInicio, origen)
@@ -30,9 +31,9 @@ class ReservaDtosTest {
     @Test
     fun `CitaResponse should be correctly instantiated`() {
         val id = UUID.randomUUID()
-        val fechaHoraInicio = LocalDateTime.now()
-        val fechaHoraFin = fechaHoraInicio.plusHours(1)
-        val estado = EstadoCita.PENDIENTE
+        val fechaHoraInicio = Instant.now()
+        val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
+        val estado = EstadoCita.PENDIENTE_PAGO
         val precioFinal = 10000
         val servicioId = UUID.randomUUID()
         val mascotaId = UUID.randomUUID()
@@ -57,9 +58,9 @@ class ReservaDtosTest {
     @Test
     fun `Cita toResponse should map correctly with paymentUrl`() {
         val citaId = UUID.randomUUID()
-        val fechaHoraInicio = LocalDateTime.now()
-        val fechaHoraFin = fechaHoraInicio.plusHours(1)
-        val estado = EstadoCita.PENDIENTE
+        val fechaHoraInicio = Instant.now()
+        val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
+        val estado = EstadoCita.PENDIENTE_PAGO
         val precioFinal = 15000
         val servicioId = UUID.randomUUID()
         val mascotaId = UUID.randomUUID()
@@ -95,14 +96,14 @@ class ReservaDtosTest {
     @Test
     fun `Cita toResponse should map correctly without paymentUrl`() {
         val citaId = UUID.randomUUID()
-        val fechaHoraInicio = LocalDateTime.now()
-        val fechaHoraFin = fechaHoraInicio.plusHours(1)
+        val fechaHoraInicio = Instant.now()
+        val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
         val estado = EstadoCita.CONFIRMADA
         val precioFinal = 12000
         val servicioId = UUID.randomUUID()
         val mascotaId = UUID.randomUUID()
         val tutorId = UUID.randomUUID()
-        val origen = OrigenCita.TELEFONO
+        val origen = OrigenCita.WHATSAPP
 
         val mockCita = mock(Cita::class.java)
         `when`(mockCita.id).thenReturn(citaId)

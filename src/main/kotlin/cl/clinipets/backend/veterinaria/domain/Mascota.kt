@@ -4,7 +4,7 @@ import cl.clinipets.core.domain.AuditableEntity
 import cl.clinipets.identity.domain.User
 import jakarta.persistence.*
 import java.math.BigDecimal
-import java.time.LocalDate
+import java.time.Instant
 import java.util.UUID
 
 @Entity
@@ -25,7 +25,7 @@ data class Mascota(
     val pesoActual: BigDecimal,
 
     @Column(nullable = false)
-    val fechaNacimiento: LocalDate,
+    val fechaNacimiento: Instant,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_id", nullable = false)

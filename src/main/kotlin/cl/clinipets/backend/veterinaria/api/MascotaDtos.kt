@@ -5,7 +5,7 @@ import cl.clinipets.backend.veterinaria.domain.Mascota
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import java.math.BigDecimal
-import java.time.LocalDate
+import java.time.Instant
 import java.util.UUID
 
 data class MascotaCreateRequest(
@@ -16,7 +16,7 @@ data class MascotaCreateRequest(
     @field:NotNull(message = "El peso es obligatorio")
     val pesoActual: BigDecimal,
     @field:NotNull(message = "La fecha de nacimiento es obligatoria")
-    val fechaNacimiento: LocalDate
+    val fechaNacimiento: Instant
 )
 
 data class MascotaResponse(
@@ -24,7 +24,7 @@ data class MascotaResponse(
     val nombre: String,
     val especie: Especie,
     val pesoActual: BigDecimal,
-    val fechaNacimiento: LocalDate,
+    val fechaNacimiento: Instant,
     val tutorId: UUID
 )
 

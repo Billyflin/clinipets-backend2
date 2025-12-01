@@ -2,7 +2,7 @@ package cl.clinipets.backend.agendamiento.domain
 
 import cl.clinipets.core.domain.AuditableEntity
 import jakarta.persistence.*
-import java.time.LocalDateTime
+import java.time.Instant
 import java.util.UUID
 
 @Entity
@@ -13,10 +13,10 @@ data class Cita(
     val id: UUID? = null,
 
     @Column(nullable = false)
-    val fechaHoraInicio: LocalDateTime,
+    val fechaHoraInicio: Instant,
 
     @Column(nullable = false)
-    val fechaHoraFin: LocalDateTime,
+    val fechaHoraFin: Instant,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)

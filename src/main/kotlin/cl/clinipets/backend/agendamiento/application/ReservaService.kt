@@ -1,5 +1,9 @@
 package cl.clinipets.backend.agendamiento.application
 
+import cl.clinipets.backend.agendamiento.api.CitaDetalladaResponse
+import cl.clinipets.backend.agendamiento.api.CitaResponse
+import cl.clinipets.backend.agendamiento.api.toDetalladaResponse
+import cl.clinipets.backend.agendamiento.api.toResponse
 import cl.clinipets.backend.agendamiento.domain.Cita
 import cl.clinipets.backend.agendamiento.domain.CitaRepository
 import cl.clinipets.backend.agendamiento.domain.EstadoCita
@@ -15,7 +19,8 @@ import cl.clinipets.core.web.UnauthorizedException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
-import java.time.LocalDateTime
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.UUID
 
 data class ReservaResult(val cita: Cita, val paymentUrl: String?)
@@ -33,7 +38,7 @@ class ReservaService(
     fun crearReserva(
         servicioId: UUID,
         mascotaId: UUID,
-        fechaHoraInicio: LocalDateTime,
+        fechaHoraInicio: Instant,
         origen: OrigenCita,
         tutor: JwtPayload
     ): ReservaResult {
@@ -47,15 +52,15 @@ class ReservaService(
             throw UnauthorizedException("No puedes reservar con esta mascota")
         }
 
-        val fecha = fechaHoraInicio.toLocalDate()
-        val slotValido = disponibilidadService.obtenerSlots(fecha, servicio.duracionMinutos)
-            .any { it == fechaHoraInicio.toLocalTime() }
+        // Validar disponibilidad. Pasamos la fecha de inicio para que el servicio calcule los slots de ese día.
+        val slotValido = disponibilidadService.obtenerSlots(fechaHoraInicio, servicio.duracionMinutos)
+            .any { it == fechaHoraInicio }
         if (!slotValido) throw BadRequestException("El horario seleccionado no está disponible")
 
         val precioFinal = calcularPrecio(servicio.requierePeso, servicio.precioBase, mascota.pesoActual, servicio.reglas.map { it })
         val cita = Cita(
             fechaHoraInicio = fechaHoraInicio,
-            fechaHoraFin = fechaHoraInicio.plusMinutes(servicio.duracionMinutos.toLong()),
+            fechaHoraFin = fechaHoraInicio.plus(servicio.duracionMinutos.toLong(), ChronoUnit.MINUTES),
             estado = EstadoCita.PENDIENTE_PAGO,
             precioFinal = precioFinal,
             servicioId = servicio.id!!,
@@ -78,6 +83,24 @@ class ReservaService(
         if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes confirmar esta cita")
         cita.estado = EstadoCita.CONFIRMADA
         return citaRepository.save(cita)
+    }
+
+    @Transactional(readOnly = true)
+    fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
+        val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
+        if (citas.isEmpty()) return emptyList()
+
+        val serviciosIds = citas.map { it.servicioId }.distinct()
+        val mascotasIds = citas.map { it.mascotaId }.distinct()
+
+        val servicios = servicioMedicoRepository.findAllById(serviciosIds).associateBy { it.id }
+        val mascotas = mascotaRepository.findAllById(mascotasIds).associateBy { it.id }
+
+        return citas.map { cita ->
+            val nombreServicio = servicios[cita.servicioId]?.nombre ?: "Desconocido"
+            val nombreMascota = mascotas[cita.mascotaId]?.nombre ?: "Desconocida"
+            cita.toDetalladaResponse(nombreServicio, nombreMascota)
+        }
     }
 
     private fun calcularPrecio(

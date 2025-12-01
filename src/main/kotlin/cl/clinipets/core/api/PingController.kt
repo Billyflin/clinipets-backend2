@@ -1,6 +1,7 @@
 package cl.clinipets.core.api
 
 import cl.clinipets.core.security.JwtPayload
+import io.swagger.v3.oas.annotations.Operation
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
@@ -15,6 +16,7 @@ data class PingResponse(
 @RestController
 @RequestMapping("/api")
 class PingController {
+    @Operation(summary = "Ping", operationId = "ping")
     @GetMapping("/ping")
     fun ping(@AuthenticationPrincipal principal: JwtPayload?): ResponseEntity<PingResponse> =
         ResponseEntity.ok(

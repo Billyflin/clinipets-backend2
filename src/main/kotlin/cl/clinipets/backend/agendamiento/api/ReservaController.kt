@@ -2,6 +2,7 @@ package cl.clinipets.backend.agendamiento.api
 
 import cl.clinipets.backend.agendamiento.application.ReservaService
 import cl.clinipets.core.security.JwtPayload
+import io.swagger.v3.oas.annotations.Operation
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
@@ -13,6 +14,7 @@ import java.util.UUID
 class ReservaController(
     private val reservaService: ReservaService
 ) {
+    @Operation(summary = "Crear reserva", operationId = "crearReserva")
     @PostMapping
     fun crear(
         @Valid @RequestBody request: ReservaCreateRequest,
@@ -28,6 +30,7 @@ class ReservaController(
         return ResponseEntity.ok(result.cita.toResponse(result.paymentUrl))
     }
 
+    @Operation(summary = "Confirmar reserva", operationId = "confirmarReserva")
     @PatchMapping("/{id}/confirmar")
     fun confirmar(
         @PathVariable id: UUID,
@@ -35,5 +38,13 @@ class ReservaController(
     ): ResponseEntity<CitaResponse> {
         val cita = reservaService.confirmar(id, principal)
         return ResponseEntity.ok(cita.toResponse())
+    }
+
+    @Operation(summary = "Listar reservas", operationId = "listarReservas")
+    @GetMapping
+    fun listar(
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<List<CitaDetalladaResponse>> {
+        return ResponseEntity.ok(reservaService.listar(principal))
     }
 }

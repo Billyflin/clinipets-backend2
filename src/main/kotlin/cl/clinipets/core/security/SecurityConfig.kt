@@ -37,6 +37,7 @@ class SecurityConfig(
                     "/static/**",
                     "/v3/api-docs"
                 ).permitAll()
+                    .requestMatchers("/api/v1/reservas").authenticated()
                     .anyRequest().authenticated()
             }
             .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)

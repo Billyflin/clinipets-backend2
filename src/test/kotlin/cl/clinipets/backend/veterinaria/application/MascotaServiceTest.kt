@@ -16,6 +16,7 @@ import org.springframework.test.context.TestPropertySource
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
+import java.time.ZoneId
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(
@@ -78,7 +79,7 @@ class MascotaServiceTest(
                 nombre = "Firulais",
                 especie = Especie.PERRO,
                 pesoActual = BigDecimal("8.5"),
-                fechaNacimiento = LocalDate.of(2022, 5, 10)
+                fechaNacimiento = LocalDate.of(2022, 5, 10).atStartOfDay(ZoneId.systemDefault()).toInstant()
             ),
             tutorPayload
         )
@@ -97,7 +98,7 @@ class MascotaServiceTest(
                 nombre = "Michi",
                 especie = Especie.GATO,
                 pesoActual = BigDecimal("4.2"),
-                fechaNacimiento = LocalDate.of(2023, 3, 15)
+                fechaNacimiento = LocalDate.of(2023, 3, 15).atStartOfDay(ZoneId.systemDefault()).toInstant()
             ),
             tutorPayload
         )
