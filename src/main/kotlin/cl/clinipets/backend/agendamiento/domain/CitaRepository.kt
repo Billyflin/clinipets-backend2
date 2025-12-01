@@ -13,4 +13,6 @@ interface CitaRepository : JpaRepository<Cita, UUID> {
     ): List<Cita>
 
     fun findAllByTutorIdOrderByFechaHoraInicioDesc(tutorId: UUID): List<Cita>
+
+    fun findAllByMascotaIdOrderByFechaHoraInicioDesc(mascotaId: UUID): List<Cita>
 }

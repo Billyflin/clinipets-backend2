@@ -103,6 +103,26 @@ class ReservaService(
         }
     }
 
+    @Transactional(readOnly = true)
+    fun listarPorMascota(mascotaId: UUID, tutor: JwtPayload): List<CitaDetalladaResponse> {
+        val mascota = mascotaRepository.findById(mascotaId)
+            .orElseThrow { NotFoundException("Mascota no encontrada") }
+        if (mascota.tutor.id != tutor.userId) {
+            throw UnauthorizedException("No puedes acceder a esta mascota")
+        }
+
+        val citas = citaRepository.findAllByMascotaIdOrderByFechaHoraInicioDesc(mascotaId)
+        if (citas.isEmpty()) return emptyList()
+
+        val serviciosIds = citas.map { it.servicioId }.distinct()
+        val servicios = servicioMedicoRepository.findAllById(serviciosIds).associateBy { it.id }
+
+        return citas.map { cita ->
+            val nombreServicio = servicios[cita.servicioId]?.nombre ?: "Desconocido"
+            cita.toDetalladaResponse(nombreServicio, mascota.nombre)
+        }
+    }
+
     private fun calcularPrecio(
         requierePeso: Boolean,
         precioBase: Int,

@@ -19,6 +19,13 @@ data class MascotaCreateRequest(
     val fechaNacimiento: Instant
 )
 
+data class MascotaUpdateRequest(
+    @field:NotBlank(message = "El nombre es obligatorio")
+    val nombre: String,
+    @field:NotNull(message = "El peso es obligatorio")
+    val pesoActual: BigDecimal
+)
+
 data class MascotaResponse(
     val id: UUID,
     val nombre: String,

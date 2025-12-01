@@ -47,4 +47,12 @@ class ReservaController(
     ): ResponseEntity<List<CitaDetalladaResponse>> {
         return ResponseEntity.ok(reservaService.listar(principal))
     }
+
+    @Operation(summary = "Listar reservas por mascota", operationId = "listarReservasPorMascota")
+    @GetMapping("/mascota/{id}")
+    fun listarPorMascota(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<List<CitaDetalladaResponse>> =
+        ResponseEntity.ok(reservaService.listarPorMascota(id, principal))
 }

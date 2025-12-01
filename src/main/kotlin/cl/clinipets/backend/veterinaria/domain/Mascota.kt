@@ -15,14 +15,14 @@ data class Mascota(
     val id: UUID? = null,
 
     @Column(nullable = false)
-    val nombre: String,
+    var nombre: String,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     val especie: Especie,
 
     @Column(nullable = false, precision = 10, scale = 2)
-    val pesoActual: BigDecimal,
+    var pesoActual: BigDecimal,
 
     @Column(nullable = false)
     val fechaNacimiento: Instant,
