@@ -13,14 +13,15 @@ import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.pagos.application.PagoService
+import cl.clinipets.servicios.application.InventarioService
 import cl.clinipets.servicios.domain.CategoriaServicio
-import cl.clinipets.servicios.domain.ReglaPrecio
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.math.BigDecimal
 import java.time.Instant
+import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
@@ -32,8 +33,11 @@ class ReservaService(
     private val disponibilidadService: DisponibilidadService,
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val mascotaRepository: MascotaRepository,
-    private val pagoService: PagoService
+    private val pagoService: PagoService,
+    private val inventarioService: InventarioService,
+    private val clinicZoneId: ZoneId
 ) {
+    private val logger = LoggerFactory.getLogger(ReservaService::class.java)
 
     @Transactional
     fun crearReserva(
@@ -42,15 +46,13 @@ class ReservaService(
         origen: OrigenCita,
         tutor: JwtPayload
     ): ReservaResult {
+        logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Items: ${detallesRequest.size}, FechaSolicitada(UTC/Raw): $fechaHoraInicio")
+
         if (detallesRequest.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio o producto")
 
         var totalPrecio = 0
         var duracionTotalMinutos = 0L
-        val detallesEntidad = mutableListOf<DetalleCita>()
 
-        // Use the mutable list, will associate with Cita later
-        // Just prepare data first
-        
         // We need a temporary object to hold the data before creating DetalleCita with the Cita reference
         data class TempDetalle(
             val servicio: cl.clinipets.servicios.domain.ServicioMedico,
@@ -59,10 +61,16 @@ class ReservaService(
         )
         val tempList = mutableListOf<TempDetalle>()
 
+        logger.debug(">>> [CREAR_RESERVA] Procesando items del carrito...")
+
         for (req in detallesRequest) {
             val servicio = servicioMedicoRepository.findById(req.servicioId)
                 .orElseThrow { NotFoundException("Servicio no encontrado: ${req.servicioId}") }
+
             if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
+
+            // Delegate inventory management
+            inventarioService.consumirStock(servicio)
 
             var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
             var precioItem = servicio.precioBase
@@ -74,67 +82,111 @@ class ReservaService(
                         .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
                     if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
                 }
-                // Duration is 0 for products, already handled by logic or entity default? 
-                // Entity usually has duration, we sum it.
                 duracionTotalMinutos += servicio.duracionMinutos
             } else {
                 // Services usually require a pet
                 if (req.mascotaId == null) throw BadRequestException("El servicio ${servicio.nombre} requiere especificar una mascota")
-                
+
                 mascota = mascotaRepository.findById(req.mascotaId)
                     .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
-                
+
                 if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
 
-                precioItem = calcularPrecio(servicio.requierePeso, servicio.precioBase, mascota.pesoActual, servicio.reglas)
+                // Delegate price calculation to Domain Entity
+                precioItem = servicio.calcularPrecioPara(mascota)
                 duracionTotalMinutos += servicio.duracionMinutos
             }
-            
+
+            logger.debug("   -> Item Agregado: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: $precioItem")
+
             totalPrecio += precioItem
             tempList.add(TempDetalle(servicio, mascota, precioItem))
         }
 
+        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Duración Total Acumulada: $duracionTotalMinutos min. Precio Total: $totalPrecio")
+
         // Validate Availability for the total duration
-        // If duration is 0 (only products), we might still need a slot or just process it? 
-        // Usually buying products is instant, but if it's "Picking up products" or "Surgery + meds", time matters.
-        // If duration > 0, check slots.
         if (duracionTotalMinutos > 0) {
-            val slotValido = disponibilidadService.obtenerSlots(fechaHoraInicio, duracionTotalMinutos.toInt())
-                .any { it == fechaHoraInicio }
-            if (!slotValido) throw BadRequestException("El horario seleccionado no está disponible para la duración total ($duracionTotalMinutos min)")
-        }
+            val fechaNormalizada = fechaHoraInicio.truncatedTo(ChronoUnit.MINUTES)
 
-        val fechaHoraFin = fechaHoraInicio.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
+            // Log crucial para debugging de zona horaria
+            val fechaLocal = fechaNormalizada.atZone(clinicZoneId).toLocalDate()
+            logger.info(">>> [VALIDACION_HORARIO] FechaNormalizada(Instant): $fechaNormalizada -> Convertida a Zona Clínica ($clinicZoneId): $fechaLocal")
 
-        val cita = Cita(
-            fechaHoraInicio = fechaHoraInicio,
-            fechaHoraFin = fechaHoraFin,
-            estado = EstadoCita.PENDIENTE_PAGO,
-            precioFinal = totalPrecio,
-            tutorId = tutor.userId,
-            origen = origen
-        )
+            val slotsDisponibles = disponibilidadService.obtenerSlots(fechaLocal, duracionTotalMinutos.toInt())
 
-        // Now create DetalleCita objects linked to the Cita
-        tempList.forEach { temp ->
-            cita.detalles.add(
-                DetalleCita(
-                    cita = cita,
-                    servicio = temp.servicio,
-                    mascota = temp.mascota,
-                    precioUnitario = temp.precio
-                )
+            val slotValido = slotsDisponibles.any { it.compareTo(fechaNormalizada) == 0 }
+
+            if (!slotValido) {
+                logger.warn(">>> [ERROR_DISPONIBILIDAD] El slot solicitado $fechaNormalizada NO se encontró en los slots disponibles generados: $slotsDisponibles")
+                throw BadRequestException("El horario seleccionado no está disponible para la duración total ($duracionTotalMinutos min)")
+            }
+
+            logger.info(">>> [VALIDACION_HORARIO] Horario disponible confirmado.")
+
+            // Use normalized time for the appointment start/end
+            val fechaHoraFin = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
+
+            val cita = Cita(
+                fechaHoraInicio = fechaNormalizada,
+                fechaHoraFin = fechaHoraFin,
+                estado = EstadoCita.PENDIENTE_PAGO,
+                precioFinal = totalPrecio,
+                tutorId = tutor.userId,
+                origen = origen
             )
+
+            // Now create DetalleCita objects linked to the Cita
+            tempList.forEach { temp ->
+                cita.detalles.add(
+                    DetalleCita(
+                        cita = cita,
+                        servicio = temp.servicio,
+                        mascota = temp.mascota,
+                        precioUnitario = temp.precio
+                    )
+                )
+            }
+
+            val guardada = citaRepository.save(cita)
+            logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
+
+            val paymentUrl = pagoService.crearPreferencia(
+                titulo = "Reserva Clínica - ${tempList.size} items",
+                precio = guardada.precioFinal,
+                externalReference = guardada.id!!.toString()
+            )
+            return ReservaResult(guardada, paymentUrl)
+        } else {
+            // Caso de productos sin duración (Venta directa o retiro)
+            logger.info(">>> [CREAR_RESERVA] Duración 0 detectada (Solo productos). Saltando validación de agenda estricta.")
+
+            val cita = Cita(
+                fechaHoraInicio = fechaHoraInicio,
+                fechaHoraFin = fechaHoraInicio,
+                estado = EstadoCita.PENDIENTE_PAGO,
+                precioFinal = totalPrecio,
+                tutorId = tutor.userId,
+                origen = origen
+            )
+            tempList.forEach { temp ->
+                cita.detalles.add(
+                    DetalleCita(
+                        cita = cita,
+                        servicio = temp.servicio,
+                        mascota = temp.mascota,
+                        precioUnitario = temp.precio
+                    )
+                )
+            }
+            val guardada = citaRepository.save(cita)
+            val paymentUrl = pagoService.crearPreferencia(
+                titulo = "Reserva Clínica - ${tempList.size} items",
+                precio = guardada.precioFinal,
+                externalReference = guardada.id!!.toString()
+            )
+            return ReservaResult(guardada, paymentUrl)
         }
-
-        val guardada = citaRepository.save(cita)
-
-        val paymentUrl = pagoService.crearPreferencia(
-            titulo = "Reserva Clínica - ${tempList.size} items",
-            precio = guardada.precioFinal,
-            externalReference = guardada.id!!.toString()
-        )
-        return ReservaResult(guardada, paymentUrl)
     }
 
     @Transactional
@@ -149,23 +201,5 @@ class ReservaService(
     fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
         val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
         return citas.map { it.toDetalladaResponse() }
-    }
-
-    // Removed 'listarPorMascota' because it's complex with the new ManyToMany-like structure 
-    // and wasn't explicitly requested to be kept/refactored in the prompt tasks, 
-    // but if needed we'd have to filter Citas where any detail matches the pet.
-    // For now, sticking to the requested tasks.
-
-    private fun calcularPrecio(
-        requierePeso: Boolean,
-        precioBase: Int,
-        pesoMascota: BigDecimal,
-        reglas: List<ReglaPrecio>
-    ): Int {
-        if (!requierePeso) return precioBase
-        val regla = reglas.firstOrNull {
-            (pesoMascota >= it.pesoMin) && (pesoMascota <= it.pesoMax)
-        }
-        return regla?.precio ?: precioBase
     }
 }

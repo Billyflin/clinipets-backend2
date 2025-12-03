@@ -6,6 +6,7 @@ import org.springframework.data.auditing.DateTimeProvider
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing
 import java.time.Clock
 import java.time.Instant
+import java.time.ZoneId
 import java.util.Optional
 
 @Configuration
@@ -20,5 +21,10 @@ class TimeConfig {
     @Bean
     fun auditingDateTimeProvider(clock: Clock): DateTimeProvider {
         return DateTimeProvider { Optional.of(Instant.now(clock)) }
+    }
+
+    @Bean
+    fun clinicZoneId(): ZoneId {
+        return ZoneId.of("America/Santiago")
     }
 }

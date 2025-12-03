@@ -73,9 +73,21 @@ class DataSeeder(
             duracionMinutos = 15,
             activo = true,
             categoria = CategoriaServicio.VACUNA,
-            especiesPermitidas = mutableSetOf() // Todas
+            especiesPermitidas = mutableSetOf(), // Todas
+            stock = 100
         )
 
-        servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas))
+        val churu = ServicioMedico(
+            nombre = "Churu Atún",
+            precioBase = 3000,
+            requierePeso = false,
+            duracionMinutos = 0,
+            activo = true,
+            categoria = CategoriaServicio.PRODUCTO,
+            especiesPermitidas = mutableSetOf(Especie.GATO),
+            stock = 50
+        )
+
+        servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas, churu))
     }
 }

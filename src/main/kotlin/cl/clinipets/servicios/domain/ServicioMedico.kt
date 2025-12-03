@@ -2,6 +2,7 @@ package cl.clinipets.servicios.domain
 
 import cl.clinipets.core.domain.AuditableEntity
 import cl.clinipets.veterinaria.domain.Especie
+import cl.clinipets.veterinaria.domain.Mascota
 import jakarta.persistence.*
 import java.util.UUID
 
@@ -37,6 +38,17 @@ data class ServicioMedico(
     @Column(name = "especie", nullable = false)
     var especiesPermitidas: MutableSet<Especie> = mutableSetOf(),
 
+    @Column(nullable = true)
+    var stock: Int? = null,
+
     @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     val reglas: MutableList<ReglaPrecio> = mutableListOf()
-) : AuditableEntity()
+) : AuditableEntity() {
+    fun calcularPrecioPara(mascota: Mascota): Int {
+        if (!requierePeso) return precioBase
+        val regla = reglas.firstOrNull {
+            (mascota.pesoActual >= it.pesoMin) && (mascota.pesoActual <= it.pesoMax)
+        }
+        return regla?.precio ?: precioBase
+    }
+}
