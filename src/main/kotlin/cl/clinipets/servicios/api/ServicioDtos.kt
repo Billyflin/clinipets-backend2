@@ -1,7 +1,9 @@
 package cl.clinipets.servicios.api
 
+import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ReglaPrecio
 import cl.clinipets.servicios.domain.ServicioMedico
+import cl.clinipets.veterinaria.domain.Especie
 import java.math.BigDecimal
 import java.util.UUID
 
@@ -19,6 +21,8 @@ data class ServicioMedicoDto(
     val requierePeso: Boolean,
     val duracionMinutos: Int,
     val activo: Boolean,
+    val categoria: CategoriaServicio,
+    val especiesPermitidas: Set<Especie>,
     val reglas: List<ReglaPrecioDto>
 )
 
@@ -29,6 +33,8 @@ fun ServicioMedico.toDto() = ServicioMedicoDto(
     requierePeso = requierePeso,
     duracionMinutos = duracionMinutos,
     activo = activo,
+    categoria = categoria,
+    especiesPermitidas = especiesPermitidas,
     reglas = reglas.map(ReglaPrecio::toDto)
 )
 

@@ -25,6 +25,23 @@ data class Mascota(
     var pesoActual: BigDecimal,
 
     @Column(nullable = false)
+    var raza: String = "Mestizo",
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    var sexo: Sexo,
+
+    @Column(nullable = false)
+    var esterilizado: Boolean = false,
+
+    @Column(unique = true)
+    var chipIdentificador: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    var temperamento: Temperamento = Temperamento.DOCIL,
+
+    @Column(nullable = false)
     val fechaNacimiento: LocalDate,
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

@@ -27,6 +27,11 @@ class MascotaService(
             Mascota(
                 nombre = request.nombre,
                 especie = request.especie,
+                raza = request.raza,
+                sexo = request.sexo,
+                esterilizado = request.esterilizado,
+                chipIdentificador = request.chipIdentificador,
+                temperamento = request.temperamento,
                 pesoActual = request.pesoActual,
                 fechaNacimiento = request.fechaNacimiento,
                 tutor = user
@@ -48,6 +53,13 @@ class MascotaService(
         val mascota = findMascotaDeTutor(id, tutor)
         mascota.nombre = request.nombre
         mascota.pesoActual = request.pesoActual
+        
+        request.raza?.let { mascota.raza = it }
+        request.sexo?.let { mascota.sexo = it }
+        request.esterilizado?.let { mascota.esterilizado = it }
+        request.chipIdentificador?.let { mascota.chipIdentificador = it }
+        request.temperamento?.let { mascota.temperamento = it }
+        
         return mascotaRepository.save(mascota).toResponse()
     }
 

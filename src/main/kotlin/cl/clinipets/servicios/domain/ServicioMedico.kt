@@ -1,6 +1,7 @@
 package cl.clinipets.servicios.domain
 
 import cl.clinipets.core.domain.AuditableEntity
+import cl.clinipets.veterinaria.domain.Especie
 import jakarta.persistence.*
 import java.util.UUID
 
@@ -25,6 +26,16 @@ data class ServicioMedico(
 
     @Column(nullable = false)
     val activo: Boolean = true,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var categoria: CategoriaServicio = CategoriaServicio.OTRO,
+
+    @ElementCollection(targetClass = Especie::class, fetch = FetchType.EAGER)
+    @CollectionTable(name = "servicio_especies", joinColumns = [JoinColumn(name = "servicio_id")])
+    @Enumerated(EnumType.STRING)
+    @Column(name = "especie", nullable = false)
+    var especiesPermitidas: MutableSet<Especie> = mutableSetOf(),
 
     @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     val reglas: MutableList<ReglaPrecio> = mutableListOf()

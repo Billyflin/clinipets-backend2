@@ -1,8 +1,10 @@
 package cl.clinipets.core.config
 
+import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ReglaPrecio
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.veterinaria.domain.Especie
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component
@@ -22,7 +24,9 @@ class DataSeeder(
             precioBase = 8000,
             requierePeso = false,
             duracionMinutos = 30,
-            activo = true
+            activo = true,
+            categoria = CategoriaServicio.CONSULTA,
+            especiesPermitidas = mutableSetOf() // Todas
         )
 
         val esterilizacion = ServicioMedico(
@@ -30,7 +34,9 @@ class DataSeeder(
             precioBase = 30000, // base mínima
             requierePeso = true,
             duracionMinutos = 60,
-            activo = true
+            activo = true,
+            categoria = CategoriaServicio.CIRUGIA,
+            especiesPermitidas = mutableSetOf(Especie.PERRO)
         )
         val reglasEsterilizacion = listOf(
             ReglaPrecio(
@@ -65,7 +71,9 @@ class DataSeeder(
             precioBase = 12000,
             requierePeso = false,
             duracionMinutos = 15,
-            activo = true
+            activo = true,
+            categoria = CategoriaServicio.VACUNA,
+            especiesPermitidas = mutableSetOf() // Todas
         )
 
         servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas))
