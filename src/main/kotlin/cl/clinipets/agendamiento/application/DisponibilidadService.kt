@@ -2,6 +2,8 @@ package cl.clinipets.agendamiento.application
 
 import cl.clinipets.agendamiento.domain.Cita
 import cl.clinipets.agendamiento.domain.CitaRepository
+import cl.clinipets.agendamiento.domain.BloqueoAgenda
+import cl.clinipets.agendamiento.domain.BloqueoAgendaRepository
 import cl.clinipets.agendamiento.domain.HorarioClinica
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
@@ -14,6 +16,7 @@ import java.time.temporal.ChronoUnit
 @Service
 class DisponibilidadService(
     private val citaRepository: CitaRepository,
+    private val bloqueoAgendaRepository: BloqueoAgendaRepository,
     private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(DisponibilidadService::class.java)
@@ -42,6 +45,9 @@ class DisponibilidadService(
         val citasDia = citaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)
         logger.info(">>> Citas encontradas en conflicto: ${citasDia.size}")
 
+        val bloqueosDia = bloqueoAgendaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)
+        logger.info(">>> Bloqueos encontrados en conflicto: ${bloqueosDia.size}")
+
         val slots = mutableListOf<Instant>()
 
         // Construir el cursor inicial: fecha + hora de apertura
@@ -54,7 +60,7 @@ class DisponibilidadService(
             val inicio = cursor
             val fin = inicio.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES)
 
-            if (estaLibre(inicio, fin, citasDia)) {
+            if (estaLibre(inicio, fin, citasDia, bloqueosDia)) {
                 slots.add(cursor)
                 // Logueamos solo algunos para no saturar, o todos si estás depurando fuerte
                 logger.debug("   -> Slot Disponible: $cursor ($inicio - $fin)")
@@ -68,9 +74,13 @@ class DisponibilidadService(
         return slots
     }
 
-    private fun estaLibre(inicio: Instant, fin: Instant, citas: List<Cita>): Boolean =
-        citas.none { cita ->
-            // Logica de colisión: Si el nuevo inicia antes de que termine el viejo Y termina después de que inicie el viejo
+    private fun estaLibre(inicio: Instant, fin: Instant, citas: List<Cita>, bloqueos: List<BloqueoAgenda>): Boolean {
+        val chocaConCita = citas.any { cita ->
             inicio < cita.fechaHoraFin && fin > cita.fechaHoraInicio
         }
+        val chocaConBloqueo = bloqueos.any { bloqueo ->
+            inicio < bloqueo.fechaHoraFin && fin > bloqueo.fechaHoraInicio
+        }
+        return !chocaConCita && !chocaConBloqueo
+    }
 }
