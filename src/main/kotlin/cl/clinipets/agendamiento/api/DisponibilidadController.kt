@@ -23,16 +23,13 @@ class DisponibilidadController(
     @GetMapping
     fun obtener(
         @RequestParam("fecha") fecha: Instant,
-        @RequestParam("servicioId") servicioId: UUID
+        @RequestParam("duracionMinutos") duracionMinutos: Int
     ): ResponseEntity<DisponibilidadResponse> {
-        val servicio = servicioMedicoRepository.findById(servicioId)
-            .orElseThrow { NotFoundException("Servicio no encontrado") }
-        if (!servicio.activo) throw BadRequestException("Servicio inactivo")
-        val slots = disponibilidadService.obtenerSlots(fecha, servicio.duracionMinutos)
+        val slots = disponibilidadService.obtenerSlots(fecha, duracionMinutos)
         return ResponseEntity.ok(
             DisponibilidadResponse(
                 fecha = fecha,
-                servicioId = servicioId,
+                servicioId = null, // Deprecated/Optional in response
                 slots = slots
             )
         )

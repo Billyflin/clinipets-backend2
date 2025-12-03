@@ -25,11 +25,8 @@ data class Cita(
     @Column(nullable = false)
     val precioFinal: Int,
 
-    @Column(nullable = false)
-    val servicioId: UUID,
-
-    @Column(nullable = false)
-    val mascotaId: UUID,
+    @OneToMany(mappedBy = "cita", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    val detalles: MutableList<DetalleCita> = mutableListOf(),
 
     @Column(nullable = false)
     val tutorId: UUID,

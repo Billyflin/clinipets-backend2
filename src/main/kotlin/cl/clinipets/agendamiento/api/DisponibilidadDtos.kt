@@ -5,6 +5,6 @@ import java.util.UUID
 
 data class DisponibilidadResponse(
     val fecha: Instant,
-    val servicioId: UUID,
+    val servicioId: UUID?,
     val slots: List<Instant>
 )

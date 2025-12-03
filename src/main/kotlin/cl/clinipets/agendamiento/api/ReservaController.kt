@@ -14,15 +14,14 @@ import java.util.UUID
 class ReservaController(
     private val reservaService: ReservaService
 ) {
-    @Operation(summary = "Crear reserva", operationId = "crearReserva")
+    @Operation(summary = "Crear reserva (Carrito)", operationId = "crearReserva")
     @PostMapping
     fun crear(
         @Valid @RequestBody request: ReservaCreateRequest,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
         val result = reservaService.crearReserva(
-            servicioId = request.servicioId,
-            mascotaId = request.mascotaId,
+            detallesRequest = request.detalles,
             fechaHoraInicio = request.fechaHoraInicio,
             origen = request.origen,
             tutor = principal
@@ -47,12 +46,4 @@ class ReservaController(
     ): ResponseEntity<List<CitaDetalladaResponse>> {
         return ResponseEntity.ok(reservaService.listar(principal))
     }
-
-    @Operation(summary = "Listar reservas por mascota", operationId = "listarReservasPorMascota")
-    @GetMapping("/mascota/{id}")
-    fun listarPorMascota(
-        @PathVariable id: UUID,
-        @AuthenticationPrincipal principal: JwtPayload
-    ): ResponseEntity<List<CitaDetalladaResponse>> =
-        ResponseEntity.ok(reservaService.listarPorMascota(id, principal))
 }
