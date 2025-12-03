@@ -36,5 +36,11 @@ data class Cita(
     val origen: OrigenCita,
 
     @Column(length = 1024)
-    var paymentUrl: String? = null
+    var paymentUrl: String? = null,
+
+    @Column(unique = true)
+    var mpPaymentId: Long? = null,
+
+    @Column(length = 50)
+    var tokenCompensacion: String? = null
 ) : AuditableEntity()

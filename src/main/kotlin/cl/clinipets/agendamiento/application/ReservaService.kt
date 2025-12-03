@@ -12,6 +12,7 @@ import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
+import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.pagos.application.EstadoPagoMP
 import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.application.InventarioService
@@ -226,7 +227,7 @@ class ReservaService(
         }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
         val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
 
@@ -235,10 +236,11 @@ class ReservaService(
             .filter { it.estado == EstadoCita.PENDIENTE_PAGO && it.id != null }
             .forEach { cita ->
                 try {
-                    val estadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
-                    if (estadoPago == EstadoPagoMP.APROBADO) {
-                        logger.info("[AUTO_HEALING] Cita {} actualizada a CONFIRMADA por pago aprobado en MP", cita.id)
+                    val resultadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
+                    if (resultadoPago.estado == EstadoPagoMP.APROBADO) {
+                        logger.info("[Auto-Healing] Cita ${cita.id} encontrada como PENDIENTE, pero APROBADA en MP. Actualizando a CONFIRMADA.")
                         cita.estado = EstadoCita.CONFIRMADA
+                        cita.mpPaymentId = resultadoPago.paymentId
                         citaRepository.save(cita)
                     }
                 } catch (ex: Exception) {
@@ -248,5 +250,34 @@ class ReservaService(
             }
 
         return citas.map { it.toDetalladaResponse(it.paymentUrl) }
+    }
+
+    @Transactional
+    fun cancelarPorStaff(citaId: UUID, staff: JwtPayload): Cita {
+        val cita = citaRepository.findById(citaId).orElseThrow { NotFoundException("Cita no encontrada") }
+
+        // 1. Validar rol
+        if (staff.role != UserRole.STAFF && staff.role != UserRole.ADMIN) {
+            throw UnauthorizedException("No tienes permisos para realizar esta acción")
+        }
+
+        // 2. Reembolso si aplica
+        if (cita.mpPaymentId != null) {
+            val reembolsoExitoso = pagoService.reembolsar(cita.mpPaymentId!!)
+            if (!reembolsoExitoso) {
+                throw Exception("Error al procesar el reembolso en Mercado Pago para la cita ${cita.id}. Por favor, revisa manualmente.")
+            }
+            // 3. Generar cupón de compensación
+            cita.tokenCompensacion = "DISCULPA-${UUID.randomUUID().toString().substring(0, 8).uppercase()}"
+        }
+
+        // 4. Devolver stock
+        reponerStock(cita)
+
+        // 5. Cambiar estado
+        cita.estado = EstadoCita.CANCELADA
+
+        // 6. Guardar y retornar
+        return citaRepository.save(cita)
     }
 }

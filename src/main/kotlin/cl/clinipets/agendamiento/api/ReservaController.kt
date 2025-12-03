@@ -5,6 +5,7 @@ import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.util.UUID
@@ -55,5 +56,16 @@ class ReservaController(
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<List<CitaDetalladaResponse>> {
         return ResponseEntity.ok(reservaService.listar(principal))
+    }
+
+    @Operation(summary = "Cancelar reserva (Staff/Admin)", operationId = "cancelarReservaPorStaff")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @DeleteMapping("/gestion/{id}")
+    fun cancelarPorStaff(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<CitaResponse> {
+        val cita = reservaService.cancelarPorStaff(id, principal)
+        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
     }
 }

@@ -14,8 +14,11 @@ import java.math.BigDecimal
 
 interface PagoService {
     fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String
-    fun consultarEstadoPago(externalReference: String): EstadoPagoMP
+    fun consultarEstadoPago(externalReference: String): EstadoPagoResult
+    fun reembolsar(paymentId: Long): Boolean
 }
+
+data class EstadoPagoResult(val estado: EstadoPagoMP, val paymentId: Long? = null)
 
 enum class EstadoPagoMP {
     APROBADO,
@@ -64,8 +67,8 @@ class MercadoPagoService(
         return preference.initPoint
     }
 
-    override fun consultarEstadoPago(externalReference: String): EstadoPagoMP {
-        if (externalReference.isBlank()) return EstadoPagoMP.OTRO
+    override fun consultarEstadoPago(externalReference: String): EstadoPagoResult {
+        if (externalReference.isBlank()) return EstadoPagoResult(EstadoPagoMP.OTRO)
 
         return try {
             val client = PaymentClient()
@@ -95,15 +98,27 @@ class MercadoPagoService(
 
             if (pagoAprobado != null) {
                 logger.info("[Auto-Healing] Pago encontrado y APROBADO. ID: {}, Ref: {}", pagoAprobado.id, externalReference)
-                EstadoPagoMP.APROBADO
+                EstadoPagoResult(EstadoPagoMP.APROBADO, pagoAprobado.id)
             } else {
-                EstadoPagoMP.OTRO
+                EstadoPagoResult(EstadoPagoMP.OTRO)
             }
 
         } catch (e: Exception) {
             // El log mostrará la excepción real si vuelve a ocurrir, pero no tumbará la app
             logger.error("[Auto-Healing] Error al consultar MercadoPago para Ref: {}", externalReference, e)
-            EstadoPagoMP.OTRO
+            EstadoPagoResult(EstadoPagoMP.OTRO)
+        }
+    }
+
+    override fun reembolsar(paymentId: Long): Boolean {
+        return try {
+            val client = PaymentClient()
+            client.refund(paymentId) // Método nativo del SDK
+            logger.info("Reembolso exitoso para pago $paymentId")
+            true
+        } catch (e: Exception) {
+            logger.error("Error al reembolsar pago $paymentId", e)
+            false
         }
     }
 }
