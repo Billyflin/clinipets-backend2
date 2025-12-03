@@ -525,43 +525,6 @@ class BookingViewModel @Inject constructor(
 }
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/core/web/ConflictException.kt">
-package cl.clinipets.core.web
-
-import org.springframework.http.HttpStatus
-import org.springframework.web.bind.annotation.ResponseStatus
-
-@ResponseStatus(HttpStatus.CONFLICT)
-class ConflictException(message: String) : RuntimeException(message)
-</file>
-
-<file path="src/main/kotlin/cl/clinipets/servicios/application/InventarioService.kt">
-package cl.clinipets.servicios.application
-
-import cl.clinipets.core.web.ConflictException
-import cl.clinipets.servicios.domain.ServicioMedico
-import cl.clinipets.servicios.domain.ServicioMedicoRepository
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-
-@Service
-class InventarioService(
-    private val servicioMedicoRepository: ServicioMedicoRepository
-) {
-    @Transactional
-    fun consumirStock(servicio: ServicioMedico, cantidad: Int = 1) {
-        if (servicio.stock == null) return
-
-        if (servicio.stock!! < cantidad) {
-            throw ConflictException("No hay stock suficiente para ${servicio.nombre}")
-        }
-        
-        servicio.stock = servicio.stock!! - cantidad
-        servicioMedicoRepository.save(servicio)
-    }
-}
-</file>
-
 <file path="gradle/wrapper/gradle-wrapper.properties">
 distributionBase=GRADLE_USER_HOME
 distributionPath=wrapper/dists
@@ -570,60 +533,6 @@ networkTimeout=10000
 validateDistributionUrl=true
 zipStoreBase=GRADLE_USER_HOME
 zipStorePath=wrapper/dists
-</file>
-
-<file path="src/main/kotlin/cl/clinipets/agendamiento/application/DisponibilidadService.kt">
-package cl.clinipets.agendamiento.application
-
-import cl.clinipets.agendamiento.domain.Cita
-import cl.clinipets.agendamiento.domain.CitaRepository
-import cl.clinipets.agendamiento.domain.HorarioClinica
-import org.springframework.stereotype.Service
-import org.springframework.transaction.annotation.Transactional
-import java.time.Instant
-import java.time.LocalDate
-import java.time.ZoneId
-import java.time.temporal.ChronoUnit
-
-@Service
-class DisponibilidadService(
-    private val citaRepository: CitaRepository
-) {
-    private val intervaloMinutos = 15L
-    private val zoneId = ZoneId.systemDefault()
-
-    @Transactional(readOnly = true)
-    fun obtenerSlots(fecha: LocalDate, duracionMinutos: Int): List<Instant> {
-        val ventana = HorarioClinica.ventanaPara(fecha.dayOfWeek) ?: return emptyList()
-        val (abre, cierra) = ventana
-
-        val startOfDay = fecha.atStartOfDay(zoneId).toInstant()
-        val endOfDay = fecha.plusDays(1).atStartOfDay(zoneId).toInstant()
-        
-        val citasDia = citaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)
-
-        val slots = mutableListOf<Instant>()
-        
-        // Construir el cursor inicial: fecha + hora de apertura
-        var cursor = fecha.atTime(abre).atZone(zoneId).toInstant()
-        val limiteCierre = fecha.atTime(cierra).atZone(zoneId).toInstant()
-
-        while (cursor.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES) <= limiteCierre) {
-            val inicio = cursor
-            val fin = inicio.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES)
-            if (estaLibre(inicio, fin, citasDia)) {
-                slots.add(cursor)
-            }
-            cursor = cursor.plus(intervaloMinutos, ChronoUnit.MINUTES)
-        }
-        return slots
-    }
-
-    private fun estaLibre(inicio: Instant, fin: Instant, citas: List<Cita>): Boolean =
-        citas.none { cita ->
-            inicio < cita.fechaHoraFin && fin > cita.fechaHoraInicio
-        }
-}
 </file>
 
 <file path="src/main/kotlin/cl/clinipets/agendamiento/domain/DetalleCita.kt">
@@ -711,33 +620,6 @@ data class JwtProperties(
     var refreshExpirationHours: Long = 24,
     var cookieName: String? = null
 )
-</file>
-
-<file path="src/main/kotlin/cl/clinipets/core/config/TimeConfig.kt">
-package cl.clinipets.core.config
-
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Configuration
-import org.springframework.data.auditing.DateTimeProvider
-import org.springframework.data.jpa.repository.config.EnableJpaAuditing
-import java.time.Clock
-import java.time.Instant
-import java.util.Optional
-
-@Configuration
-@EnableJpaAuditing(dateTimeProviderRef = "auditingDateTimeProvider")
-class TimeConfig {
-
-    @Bean
-    fun clock(): Clock {
-        return Clock.systemUTC()
-    }
-
-    @Bean
-    fun auditingDateTimeProvider(clock: Clock): DateTimeProvider {
-        return DateTimeProvider { Optional.of(Instant.now(clock)) }
-    }
-}
 </file>
 
 <file path="src/main/kotlin/cl/clinipets/core/security/JwtAuthenticationFilter.kt">
@@ -888,13 +770,14 @@ data class ApiError(
 )
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/core/web/DomainExceptions.kt">
+<file path="src/main/kotlin/cl/clinipets/core/web/ConflictException.kt">
 package cl.clinipets.core.web
 
-open class DomainException(message: String) : RuntimeException(message)
-class NotFoundException(message: String) : DomainException(message)
-class UnauthorizedException(message: String) : DomainException(message)
-class BadRequestException(message: String) : DomainException(message)
+import org.springframework.http.HttpStatus
+import org.springframework.web.bind.annotation.ResponseStatus
+
+@ResponseStatus(HttpStatus.CONFLICT)
+class ConflictException(message: String) : RuntimeException(message)
 </file>
 
 <file path="src/main/kotlin/cl/clinipets/core/web/RestExceptionHandler.kt">
@@ -1199,49 +1082,6 @@ class RazasService {
 }
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/pagos/application/MercadoPagoService.kt">
-package cl.clinipets.pagos.application
-
-import com.mercadopago.MercadoPagoConfig
-import com.mercadopago.client.preference.PreferenceClient
-import com.mercadopago.client.preference.PreferenceItemRequest
-import com.mercadopago.client.preference.PreferenceRequest
-import org.springframework.beans.factory.annotation.Value
-import org.springframework.stereotype.Component
-import java.math.BigDecimal
-
-interface PagoService {
-    fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String
-}
-
-@Component
-class MercadoPagoService(
-    @Value("\${mercadopago.access-token}") private val accessToken: String
-) : PagoService {
-
-    init {
-        require(accessToken.isNotBlank()) { "mercadopago.access-token no está configurado" }
-        MercadoPagoConfig.setAccessToken(accessToken)
-    }
-
-    override fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String {
-        val client = PreferenceClient()
-        val item = PreferenceItemRequest.builder()
-            .title(titulo)
-            .quantity(1)
-            .unitPrice(BigDecimal.valueOf(precio.toDouble()))
-            .currencyId("CLP")
-            .build()
-        val request = PreferenceRequest.builder()
-            .items(listOf(item))
-            .externalReference(externalReference)
-            .build()
-        val preference = client.create(request)
-        return preference.initPoint
-    }
-}
-</file>
-
 <file path="src/main/kotlin/cl/clinipets/servicios/api/ServicioMedicoController.kt">
 package cl.clinipets.servicios.api
 
@@ -1261,6 +1101,41 @@ class ServicioMedicoController(
     @GetMapping
     fun listar(): ResponseEntity<List<ServicioMedicoDto>> =
         ResponseEntity.ok(servicioMedicoService.listarActivos())
+}
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/servicios/application/InventarioService.kt">
+package cl.clinipets.servicios.application
+
+import cl.clinipets.core.web.ConflictException
+import cl.clinipets.servicios.domain.ServicioMedico
+import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+
+@Service
+class InventarioService(
+    private val servicioMedicoRepository: ServicioMedicoRepository
+) {
+    @Transactional
+    fun consumirStock(servicio: ServicioMedico, cantidad: Int = 1) {
+        if (servicio.stock == null) return
+
+        if (servicio.stock!! < cantidad) {
+            throw ConflictException("No hay stock suficiente para ${servicio.nombre}")
+        }
+        
+        servicio.stock = servicio.stock!! - cantidad
+        servicioMedicoRepository.save(servicio)
+    }
+
+    @Transactional
+    fun devolverStock(servicio: ServicioMedico, cantidad: Int = 1) {
+        if (servicio.stock == null) return
+
+        servicio.stock = servicio.stock!! + cantidad
+        servicioMedicoRepository.save(servicio)
+    }
 }
 </file>
 
@@ -2136,56 +2011,6 @@ rootProject.name = "backend"
 </component>
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/agendamiento/api/DisponibilidadController.kt">
-package cl.clinipets.agendamiento.api
-
-import cl.clinipets.agendamiento.application.DisponibilidadService
-import io.swagger.v3.oas.annotations.Operation
-import org.springframework.format.annotation.DateTimeFormat
-import org.springframework.http.ResponseEntity
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.RequestMapping
-import org.springframework.web.bind.annotation.RequestParam
-import org.springframework.web.bind.annotation.RestController
-import java.time.LocalDate
-
-@RestController
-@RequestMapping("/api/v1/disponibilidad")
-class DisponibilidadController(
-    private val disponibilidadService: DisponibilidadService
-) {
-    @Operation(summary = "Obtener disponibilidad", operationId = "obtenerDisponibilidad")
-    @GetMapping
-    fun obtener(
-        @RequestParam("fecha") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fecha: LocalDate,
-        @RequestParam("duracionMinutos") duracionMinutos: Int
-    ): ResponseEntity<DisponibilidadResponse> {
-        val slots = disponibilidadService.obtenerSlots(fecha, duracionMinutos)
-        return ResponseEntity.ok(
-            DisponibilidadResponse(
-                fecha = fecha,
-                servicioId = null, // Deprecated/Optional in response
-                slots = slots
-            )
-        )
-    }
-}
-</file>
-
-<file path="src/main/kotlin/cl/clinipets/agendamiento/api/DisponibilidadDtos.kt">
-package cl.clinipets.agendamiento.api
-
-import java.time.Instant
-import java.time.LocalDate
-import java.util.UUID
-
-data class DisponibilidadResponse(
-    val fecha: LocalDate,
-    val servicioId: UUID?,
-    val slots: List<Instant>
-)
-</file>
-
 <file path="src/main/kotlin/cl/clinipets/agendamiento/api/ReservaController.kt">
 package cl.clinipets.agendamiento.api
 
@@ -2225,7 +2050,17 @@ class ReservaController(
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
         val cita = reservaService.confirmar(id, principal)
-        return ResponseEntity.ok(cita.toResponse())
+        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+    }
+
+    @Operation(summary = "Cancelar reserva", operationId = "cancelarReserva")
+    @DeleteMapping("/{id}")
+    fun cancelar(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<CitaResponse> {
+        val cita = reservaService.cancelar(id, principal)
+        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
     }
 
     @Operation(summary = "Listar reservas", operationId = "listarReservas")
@@ -2334,188 +2169,82 @@ fun DetalleCita.toResponse() = DetalleCitaResponse(
 )
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/agendamiento/application/ReservaService.kt">
+<file path="src/main/kotlin/cl/clinipets/agendamiento/application/DisponibilidadService.kt">
 package cl.clinipets.agendamiento.application
 
-import cl.clinipets.agendamiento.api.CitaDetalladaResponse
-import cl.clinipets.agendamiento.api.DetalleReservaRequest
-import cl.clinipets.agendamiento.api.toDetalladaResponse
 import cl.clinipets.agendamiento.domain.Cita
 import cl.clinipets.agendamiento.domain.CitaRepository
-import cl.clinipets.agendamiento.domain.DetalleCita
-import cl.clinipets.agendamiento.domain.EstadoCita
-import cl.clinipets.agendamiento.domain.OrigenCita
-import cl.clinipets.core.security.JwtPayload
-import cl.clinipets.core.web.BadRequestException
-import cl.clinipets.core.web.NotFoundException
-import cl.clinipets.core.web.UnauthorizedException
-import cl.clinipets.pagos.application.PagoService
-import cl.clinipets.servicios.application.InventarioService
-import cl.clinipets.servicios.domain.CategoriaServicio
-import cl.clinipets.servicios.domain.ServicioMedicoRepository
-import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.agendamiento.domain.HorarioClinica
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
-import java.util.UUID
-
-data class ReservaResult(val cita: Cita, val paymentUrl: String?)
 
 @Service
-class ReservaService(
+class DisponibilidadService(
     private val citaRepository: CitaRepository,
-    private val disponibilidadService: DisponibilidadService,
-    private val servicioMedicoRepository: ServicioMedicoRepository,
-    private val mascotaRepository: MascotaRepository,
-    private val pagoService: PagoService,
-    private val inventarioService: InventarioService
+    private val clinicZoneId: ZoneId
 ) {
-
-    @Transactional
-    fun crearReserva(
-        detallesRequest: List<DetalleReservaRequest>,
-        fechaHoraInicio: Instant,
-        origen: OrigenCita,
-        tutor: JwtPayload
-    ): ReservaResult {
-        if (detallesRequest.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio o producto")
-
-        var totalPrecio = 0
-        var duracionTotalMinutos = 0L
-        
-        // We need a temporary object to hold the data before creating DetalleCita with the Cita reference
-        data class TempDetalle(
-            val servicio: cl.clinipets.servicios.domain.ServicioMedico,
-            val mascota: cl.clinipets.veterinaria.domain.Mascota?,
-            val precio: Int
-        )
-        val tempList = mutableListOf<TempDetalle>()
-
-        for (req in detallesRequest) {
-            val servicio = servicioMedicoRepository.findById(req.servicioId)
-                .orElseThrow { NotFoundException("Servicio no encontrado: ${req.servicioId}") }
-            if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
-
-            // Delegate inventory management
-            inventarioService.consumirStock(servicio)
-
-            var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
-            var precioItem = servicio.precioBase
-
-            if (servicio.categoria == CategoriaServicio.PRODUCTO) {
-                // Products don't necessarily need a pet, but if provided, check owner
-                if (req.mascotaId != null) {
-                    mascota = mascotaRepository.findById(req.mascotaId)
-                        .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
-                    if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
-                }
-                duracionTotalMinutos += servicio.duracionMinutos
-            } else {
-                // Services usually require a pet
-                if (req.mascotaId == null) throw BadRequestException("El servicio ${servicio.nombre} requiere especificar una mascota")
-                
-                mascota = mascotaRepository.findById(req.mascotaId)
-                    .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
-                
-                if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
-
-                // Delegate price calculation to Domain Entity
-                precioItem = servicio.calcularPrecioPara(mascota)
-                duracionTotalMinutos += servicio.duracionMinutos
-            }
-            
-            totalPrecio += precioItem
-            tempList.add(TempDetalle(servicio, mascota, precioItem))
-        }
-
-        // Validate Availability for the total duration
-        if (duracionTotalMinutos > 0) {
-            val fechaNormalizada = fechaHoraInicio.truncatedTo(ChronoUnit.MINUTES)
-            val fechaLocal = fechaNormalizada.atZone(ZoneId.systemDefault()).toLocalDate()
-            val slotValido = disponibilidadService.obtenerSlots(fechaLocal, duracionTotalMinutos.toInt())
-                .any { it.compareTo(fechaNormalizada) == 0 }
-            if (!slotValido) throw BadRequestException("El horario seleccionado no está disponible para la duración total ($duracionTotalMinutos min)")
-            
-            // Use normalized time for the appointment start/end
-            val fechaHoraFin = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
-
-            val cita = Cita(
-                fechaHoraInicio = fechaNormalizada,
-                fechaHoraFin = fechaHoraFin,
-                estado = EstadoCita.PENDIENTE_PAGO,
-                precioFinal = totalPrecio,
-                tutorId = tutor.userId,
-                origen = origen
-            )
-
-            // Now create DetalleCita objects linked to the Cita
-            tempList.forEach { temp ->
-                cita.detalles.add(
-                    DetalleCita(
-                        cita = cita,
-                        servicio = temp.servicio,
-                        mascota = temp.mascota,
-                        precioUnitario = temp.precio
-                    )
-                )
-            }
-
-            val guardada = citaRepository.save(cita)
-
-            val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Reserva Clínica - ${tempList.size} items",
-                precio = guardada.precioFinal,
-                externalReference = guardada.id!!.toString()
-            )
-            return ReservaResult(guardada, paymentUrl)
-        } else {
-             // Fallback if duration is 0 (e.g. only products), assume immediate/now or keep requested time
-             // But usually we should persist something. 
-             // If duration is 0, maybe we don't need availability check?
-             // Let's keep using fechaHoraInicio as is for 0 duration
-             val cita = Cita(
-                fechaHoraInicio = fechaHoraInicio,
-                fechaHoraFin = fechaHoraInicio,
-                estado = EstadoCita.PENDIENTE_PAGO,
-                precioFinal = totalPrecio,
-                tutorId = tutor.userId,
-                origen = origen
-            )
-            tempList.forEach { temp ->
-                cita.detalles.add(
-                    DetalleCita(
-                        cita = cita,
-                        servicio = temp.servicio,
-                        mascota = temp.mascota,
-                        precioUnitario = temp.precio
-                    )
-                )
-            }
-            val guardada = citaRepository.save(cita)
-             val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Reserva Clínica - ${tempList.size} items",
-                precio = guardada.precioFinal,
-                externalReference = guardada.id!!.toString()
-            )
-            return ReservaResult(guardada, paymentUrl)
-        }
-    }
-
-    @Transactional
-    fun confirmar(id: UUID, tutor: JwtPayload): Cita {
-        val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
-        if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes confirmar esta cita")
-        cita.estado = EstadoCita.CONFIRMADA
-        return citaRepository.save(cita)
-    }
+    private val logger = LoggerFactory.getLogger(DisponibilidadService::class.java)
+    private val intervaloMinutos = 15L
 
     @Transactional(readOnly = true)
-    fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
-        val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
-        return citas.map { it.toDetalladaResponse() }
+    fun obtenerSlots(fecha: LocalDate, duracionMinutos: Int): List<Instant> {
+        logger.info(">>> Calculando disponibilidad. Fecha: $fecha, Duración: $duracionMinutos min, Zona: $clinicZoneId")
+
+        val ventana = HorarioClinica.ventanaPara(fecha.dayOfWeek)
+
+        if (ventana == null) {
+            logger.warn(">>> La clínica está CERRADA los ${fecha.dayOfWeek}")
+            return emptyList()
+        }
+
+        val (abre, cierra) = ventana
+        logger.info(">>> Horario del día: $abre a $cierra")
+
+        // Calculamos rango del día completo para buscar citas existentes
+        val startOfDay = fecha.atStartOfDay(clinicZoneId).toInstant()
+        val endOfDay = fecha.plusDays(1).atStartOfDay(clinicZoneId).toInstant()
+
+        logger.debug(">>> Buscando citas en DB entre $startOfDay y $endOfDay")
+
+        val citasDia = citaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)
+        logger.info(">>> Citas encontradas en conflicto: ${citasDia.size}")
+
+        val slots = mutableListOf<Instant>()
+
+        // Construir el cursor inicial: fecha + hora de apertura
+        var cursor = fecha.atTime(abre).atZone(clinicZoneId).toInstant()
+        val limiteCierre = fecha.atTime(cierra).atZone(clinicZoneId).toInstant()
+
+        logger.info(">>> Generando slots desde $cursor hasta $limiteCierre")
+
+        while (cursor.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES) <= limiteCierre) {
+            val inicio = cursor
+            val fin = inicio.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES)
+
+            if (estaLibre(inicio, fin, citasDia)) {
+                slots.add(cursor)
+                // Logueamos solo algunos para no saturar, o todos si estás depurando fuerte
+                logger.debug("   -> Slot Disponible: $cursor ($inicio - $fin)")
+            } else {
+                logger.debug("   -> Slot OCUPADO: $cursor")
+            }
+            cursor = cursor.plus(intervaloMinutos, ChronoUnit.MINUTES)
+        }
+
+        logger.info(">>> Total slots disponibles calculados: ${slots.size}")
+        return slots
     }
+
+    private fun estaLibre(inicio: Instant, fin: Instant, citas: List<Cita>): Boolean =
+        citas.none { cita ->
+            // Logica de colisión: Si el nuevo inicia antes de que termine el viejo Y termina después de que inicie el viejo
+            inicio < cita.fechaHoraFin && fin > cita.fechaHoraInicio
+        }
 }
 </file>
 
@@ -2555,7 +2284,10 @@ data class Cita(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
-    val origen: OrigenCita
+    val origen: OrigenCita,
+
+    @Column(length = 1024)
+    var paymentUrl: String? = null
 ) : AuditableEntity()
 </file>
 
@@ -2575,6 +2307,39 @@ interface CitaRepository : JpaRepository<Cita, UUID> {
     ): List<Cita>
 
     fun findAllByTutorIdOrderByFechaHoraInicioDesc(tutorId: UUID): List<Cita>
+}
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/core/config/TimeConfig.kt">
+package cl.clinipets.core.config
+
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.data.auditing.DateTimeProvider
+import org.springframework.data.jpa.repository.config.EnableJpaAuditing
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.util.Optional
+
+@Configuration
+@EnableJpaAuditing(dateTimeProviderRef = "auditingDateTimeProvider")
+class TimeConfig {
+
+    @Bean
+    fun clock(): Clock {
+        return Clock.systemUTC()
+    }
+
+    @Bean
+    fun auditingDateTimeProvider(clock: Clock): DateTimeProvider {
+        return DateTimeProvider { Optional.of(Instant.now(clock)) }
+    }
+
+    @Bean
+    fun clinicZoneId(): ZoneId {
+        return ZoneId.of("America/Santiago")
+    }
 }
 </file>
 
@@ -2602,6 +2367,15 @@ abstract class AuditableEntity {
     var updatedAt: Instant = Instant.EPOCH
         protected set
 }
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/core/web/DomainExceptions.kt">
+package cl.clinipets.core.web
+
+open class DomainException(message: String) : RuntimeException(message)
+class NotFoundException(message: String) : DomainException(message)
+class UnauthorizedException(message: String) : DomainException(message)
+class BadRequestException(message: String) : DomainException(message)
 </file>
 
 <file path="src/main/kotlin/cl/clinipets/identity/api/AuthController.kt">
@@ -2642,55 +2416,96 @@ class AuthController(
 }
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/servicios/api/ServicioDtos.kt">
-package cl.clinipets.servicios.api
+<file path="src/main/kotlin/cl/clinipets/pagos/application/MercadoPagoService.kt">
+package cl.clinipets.pagos.application
 
-import cl.clinipets.servicios.domain.CategoriaServicio
-import cl.clinipets.servicios.domain.ReglaPrecio
-import cl.clinipets.servicios.domain.ServicioMedico
-import cl.clinipets.veterinaria.domain.Especie
+import com.mercadopago.MercadoPagoConfig
+import com.mercadopago.client.payment.PaymentClient
+import com.mercadopago.client.preference.PreferenceBackUrlsRequest
+import com.mercadopago.client.preference.PreferenceClient
+import com.mercadopago.client.preference.PreferenceItemRequest
+import com.mercadopago.client.preference.PreferenceRequest
+import org.slf4j.LoggerFactory
+import org.springframework.beans.factory.annotation.Value
+import org.springframework.stereotype.Component
 import java.math.BigDecimal
-import java.util.UUID
 
-data class ReglaPrecioDto(
-    val id: UUID,
-    val pesoMin: BigDecimal,
-    val pesoMax: BigDecimal,
-    val precio: Int
-)
+interface PagoService {
+    fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String
 
-data class ServicioMedicoDto(
-    val id: UUID,
-    val nombre: String,
-    val precioBase: Int,
-    val requierePeso: Boolean,
-    val duracionMinutos: Int,
-    val activo: Boolean,
-    val categoria: CategoriaServicio,
-    val especiesPermitidas: Set<Especie>,
-    val stock: Int?,
-    val reglas: List<ReglaPrecioDto>
-)
+    // Consulta el estado del pago asociado a una cita (externalReference = id de la cita)
+    fun consultarEstadoPago(externalReference: String): EstadoPagoMP
+}
 
-fun ServicioMedico.toDto() = ServicioMedicoDto(
-    id = id!!,
-    nombre = nombre,
-    precioBase = precioBase,
-    requierePeso = requierePeso,
-    duracionMinutos = duracionMinutos,
-    activo = activo,
-    categoria = categoria,
-    especiesPermitidas = especiesPermitidas,
-    stock = stock,
-    reglas = reglas.map(ReglaPrecio::toDto)
-)
+enum class EstadoPagoMP {
+    APROBADO,
+    OTRO
+}
 
-fun ReglaPrecio.toDto() = ReglaPrecioDto(
-    id = id!!,
-    pesoMin = pesoMin,
-    pesoMax = pesoMax,
-    precio = precio
-)
+@Component
+class MercadoPagoService(
+    @param:Value("\${mercadopago.access-token}") private val accessToken: String
+) : PagoService {
+
+    private val logger = LoggerFactory.getLogger(MercadoPagoService::class.java)
+
+    init {
+        require(accessToken.isNotBlank()) { "mercadopago.access-token no está configurado" }
+        MercadoPagoConfig.setAccessToken(accessToken)
+    }
+
+    override fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String {
+        logger.info("Creando preferencia MP - Titulo: {}, Precio: {}, Ref: {}", titulo, precio, externalReference)
+
+        val client = PreferenceClient()
+        val item = PreferenceItemRequest.builder()
+            .title(titulo)
+            .quantity(1)
+            .unitPrice(BigDecimal.valueOf(precio.toDouble()))
+            .currencyId("CLP")
+            .build()
+
+        val backUrls = PreferenceBackUrlsRequest.builder()
+            .success("clinipets://payment-result?status=success")
+            .failure("clinipets://payment-result?status=failure")
+            .pending("clinipets://payment-result?status=pending")
+            .build()
+
+        val request = PreferenceRequest.builder()
+            .items(listOf(item))
+            .externalReference(externalReference)
+            .backUrls(backUrls)
+            .autoReturn("approved")
+            .build()
+
+        val preference = client.create(request)
+
+        logger.info("Preferencia MP creada exitosamente. InitPoint: {}", preference.initPoint)
+
+        return preference.initPoint
+    }
+
+    override fun consultarEstadoPago(externalReference: String): EstadoPagoMP {
+        return try {
+            // Dejamos creado el PaymentClient para futura implementación real
+            @Suppress("UNUSED_VARIABLE")
+            val paymentClient = PaymentClient()
+
+            // TODO: Integrar realmente con PaymentClient.search cuando el SDK exponga
+            // PaymentSearchRequest o un MPSearchRequest accesible públicamente.
+            // Por ahora, se devuelve OTRO para no romper compilación.
+            logger.warn(
+                "[MP] consultarEstadoPago aún no está integrado con PaymentClient.search. " +
+                    "Se devolverá OTRO para externalReference={}",
+                externalReference
+            )
+            EstadoPagoMP.OTRO
+        } catch (ex: Exception) {
+            logger.error("[MP] Error consultando estado de pago para externalReference={}", externalReference, ex)
+            EstadoPagoMP.OTRO
+        }
+    }
+}
 </file>
 
 <file path="src/main/kotlin/cl/clinipets/servicios/domain/CategoriaServicio.kt">
@@ -2698,63 +2513,6 @@ package cl.clinipets.servicios.domain
 
 enum class CategoriaServicio {
     CONSULTA, VACUNA, CIRUGIA, EXAMEN, PRODUCTO, OTRO
-}
-</file>
-
-<file path="src/main/kotlin/cl/clinipets/servicios/domain/ServicioMedico.kt">
-package cl.clinipets.servicios.domain
-
-import cl.clinipets.core.domain.AuditableEntity
-import cl.clinipets.veterinaria.domain.Especie
-import cl.clinipets.veterinaria.domain.Mascota
-import jakarta.persistence.*
-import java.util.UUID
-
-@Entity
-@Table(name = "servicios_medicos")
-data class ServicioMedico(
-    @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    val id: UUID? = null,
-
-    @Column(nullable = false, unique = true)
-    val nombre: String,
-
-    @Column(nullable = false)
-    val precioBase: Int,
-
-    @Column(nullable = false)
-    val requierePeso: Boolean,
-
-    @Column(nullable = false)
-    val duracionMinutos: Int,
-
-    @Column(nullable = false)
-    val activo: Boolean = true,
-
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 20)
-    var categoria: CategoriaServicio = CategoriaServicio.OTRO,
-
-    @ElementCollection(targetClass = Especie::class, fetch = FetchType.EAGER)
-    @CollectionTable(name = "servicio_especies", joinColumns = [JoinColumn(name = "servicio_id")])
-    @Enumerated(EnumType.STRING)
-    @Column(name = "especie", nullable = false)
-    var especiesPermitidas: MutableSet<Especie> = mutableSetOf(),
-
-    @Column(nullable = true)
-    var stock: Int? = null,
-
-    @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
-    val reglas: MutableList<ReglaPrecio> = mutableListOf()
-) : AuditableEntity() {
-    fun calcularPrecioPara(mascota: Mascota): Int {
-        if (!requierePeso) return precioBase
-        val regla = reglas.firstOrNull {
-            (mascota.pesoActual >= it.pesoMin) && (mascota.pesoActual <= it.pesoMax)
-        }
-        return regla?.precio ?: precioBase
-    }
 }
 </file>
 
@@ -3351,98 +3109,415 @@ slowed down or stopped completely. Someone may choose to fork your project or vo
 owner, allowing your project to keep going. You can also make an explicit request for maintainers.
 </file>
 
-<file path="src/main/kotlin/cl/clinipets/core/config/DataSeeder.kt">
-package cl.clinipets.core.config
+<file path="src/main/kotlin/cl/clinipets/agendamiento/api/DisponibilidadController.kt">
+package cl.clinipets.agendamiento.api
+
+import cl.clinipets.agendamiento.application.DisponibilidadService
+import io.swagger.v3.oas.annotations.Operation
+import org.springframework.format.annotation.DateTimeFormat
+import org.springframework.http.ResponseEntity
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.RequestParam
+import org.springframework.web.bind.annotation.RestController
+import java.time.LocalDate
+
+@RestController
+@RequestMapping("/api/v1/disponibilidad")
+class DisponibilidadController(
+    private val disponibilidadService: DisponibilidadService
+) {
+    @Operation(summary = "Obtener disponibilidad", operationId = "obtenerDisponibilidad")
+    @GetMapping
+    fun obtener(
+        @RequestParam("fecha") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fecha: LocalDate,
+        @RequestParam("duracionMinutos") duracionMinutos: Int
+    ): ResponseEntity<DisponibilidadResponse> {
+        val slots = disponibilidadService.obtenerSlots(fecha, duracionMinutos)
+        return ResponseEntity.ok(
+            DisponibilidadResponse(
+                fecha = fecha,
+                servicioId = null, // Deprecated/Optional in response
+                slots = slots
+            )
+        )
+    }
+}
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/agendamiento/api/DisponibilidadDtos.kt">
+package cl.clinipets.agendamiento.api
+
+import java.time.Instant
+import java.time.LocalDate
+import java.util.UUID
+
+data class DisponibilidadResponse(
+    val fecha: LocalDate,
+    val servicioId: UUID?,
+    val slots: List<Instant>
+)
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/agendamiento/application/ReservaService.kt">
+package cl.clinipets.agendamiento.application
+
+import cl.clinipets.agendamiento.api.CitaDetalladaResponse
+import cl.clinipets.agendamiento.api.DetalleReservaRequest
+import cl.clinipets.agendamiento.api.toDetalladaResponse
+import cl.clinipets.agendamiento.domain.Cita
+import cl.clinipets.agendamiento.domain.CitaRepository
+import cl.clinipets.agendamiento.domain.DetalleCita
+import cl.clinipets.agendamiento.domain.EstadoCita
+import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.web.BadRequestException
+import cl.clinipets.core.web.NotFoundException
+import cl.clinipets.core.web.UnauthorizedException
+import cl.clinipets.pagos.application.EstadoPagoMP
+import cl.clinipets.pagos.application.PagoService
+import cl.clinipets.servicios.application.InventarioService
+import cl.clinipets.servicios.domain.CategoriaServicio
+import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.veterinaria.domain.MascotaRepository
+import org.slf4j.LoggerFactory
+import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
+import java.time.Instant
+import java.time.ZoneId
+import java.time.temporal.ChronoUnit
+import java.util.UUID
+
+data class ReservaResult(val cita: Cita, val paymentUrl: String?)
+
+@Service
+class ReservaService(
+    private val citaRepository: CitaRepository,
+    private val disponibilidadService: DisponibilidadService,
+    private val servicioMedicoRepository: ServicioMedicoRepository,
+    private val mascotaRepository: MascotaRepository,
+    private val pagoService: PagoService,
+    private val inventarioService: InventarioService,
+    private val clinicZoneId: ZoneId
+) {
+    private val logger = LoggerFactory.getLogger(ReservaService::class.java)
+
+    @Transactional
+    fun crearReserva(
+        detallesRequest: List<DetalleReservaRequest>,
+        fechaHoraInicio: Instant,
+        origen: OrigenCita,
+        tutor: JwtPayload
+    ): ReservaResult {
+        logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Items: ${detallesRequest.size}, FechaSolicitada(UTC/Raw): $fechaHoraInicio")
+
+        if (detallesRequest.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio o producto")
+
+        var totalPrecio = 0
+        var duracionTotalMinutos = 0L
+
+        // We need a temporary object to hold the data before creating DetalleCita with the Cita reference
+        data class TempDetalle(
+            val servicio: cl.clinipets.servicios.domain.ServicioMedico,
+            val mascota: cl.clinipets.veterinaria.domain.Mascota?,
+            val precio: Int
+        )
+        val tempList = mutableListOf<TempDetalle>()
+
+        logger.debug(">>> [CREAR_RESERVA] Procesando items del carrito...")
+
+        for (req in detallesRequest) {
+            val servicio = servicioMedicoRepository.findById(req.servicioId)
+                .orElseThrow { NotFoundException("Servicio no encontrado: ${req.servicioId}") }
+
+            if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
+
+            // Delegate inventory management
+            inventarioService.consumirStock(servicio)
+
+            var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
+            var precioItem = servicio.precioBase
+
+            if (servicio.categoria == CategoriaServicio.PRODUCTO) {
+                // Products don't necessarily need a pet, but if provided, check owner
+                if (req.mascotaId != null) {
+                    mascota = mascotaRepository.findById(req.mascotaId)
+                        .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
+                    if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
+                }
+                duracionTotalMinutos += servicio.duracionMinutos
+            } else {
+                // Services usually require a pet
+                if (req.mascotaId == null) throw BadRequestException("El servicio ${servicio.nombre} requiere especificar una mascota")
+
+                mascota = mascotaRepository.findById(req.mascotaId)
+                    .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
+
+                if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
+
+                // Delegate price calculation to Domain Entity
+                precioItem = servicio.calcularPrecioPara(mascota)
+                duracionTotalMinutos += servicio.duracionMinutos
+            }
+
+            logger.debug("   -> Item Agregado: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: $precioItem")
+
+            totalPrecio += precioItem
+            tempList.add(TempDetalle(servicio, mascota, precioItem))
+        }
+
+        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Duración Total Acumulada: $duracionTotalMinutos min. Precio Total: $totalPrecio")
+
+        // Validate Availability for the total duration
+        if (duracionTotalMinutos > 0) {
+            val fechaNormalizada = fechaHoraInicio.truncatedTo(ChronoUnit.MINUTES)
+
+            // Log crucial para debugging de zona horaria
+            val fechaLocal = fechaNormalizada.atZone(clinicZoneId).toLocalDate()
+            logger.info(">>> [VALIDACION_HORARIO] FechaNormalizada(Instant): $fechaNormalizada -> Convertida a Zona Clínica ($clinicZoneId): $fechaLocal")
+
+            val slotsDisponibles = disponibilidadService.obtenerSlots(fechaLocal, duracionTotalMinutos.toInt())
+
+            val slotValido = slotsDisponibles.any { it.compareTo(fechaNormalizada) == 0 }
+
+            if (!slotValido) {
+                logger.warn(">>> [ERROR_DISPONIBILIDAD] El slot solicitado $fechaNormalizada NO se encontró en los slots disponibles generados: $slotsDisponibles")
+                throw BadRequestException("El horario seleccionado no está disponible para la duración total ($duracionTotalMinutos min)")
+            }
+
+            logger.info(">>> [VALIDACION_HORARIO] Horario disponible confirmado.")
+
+            // Use normalized time for the appointment start/end
+            val fechaHoraFin = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
+
+            val cita = Cita(
+                fechaHoraInicio = fechaNormalizada,
+                fechaHoraFin = fechaHoraFin,
+                estado = EstadoCita.PENDIENTE_PAGO,
+                precioFinal = totalPrecio,
+                tutorId = tutor.userId,
+                origen = origen
+            )
+
+            // Now create DetalleCita objects linked to the Cita
+            tempList.forEach { temp ->
+                cita.detalles.add(
+                    DetalleCita(
+                        cita = cita,
+                        servicio = temp.servicio,
+                        mascota = temp.mascota,
+                        precioUnitario = temp.precio
+                    )
+                )
+            }
+
+            val guardada = citaRepository.save(cita)
+            logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
+
+            val paymentUrl = pagoService.crearPreferencia(
+                titulo = "Reserva Clínica - ${tempList.size} items",
+                precio = guardada.precioFinal,
+                externalReference = guardada.id!!.toString()
+            )
+            guardada.paymentUrl = paymentUrl
+            return ReservaResult(guardada, paymentUrl)
+        } else {
+            // Caso de productos sin duración (Venta directa o retiro)
+            logger.info(">>> [CREAR_RESERVA] Duración 0 detectada (Solo productos). Saltando validación de agenda estricta.")
+
+            val cita = Cita(
+                fechaHoraInicio = fechaHoraInicio,
+                fechaHoraFin = fechaHoraInicio,
+                estado = EstadoCita.PENDIENTE_PAGO,
+                precioFinal = totalPrecio,
+                tutorId = tutor.userId,
+                origen = origen
+            )
+            tempList.forEach { temp ->
+                cita.detalles.add(
+                    DetalleCita(
+                        cita = cita,
+                        servicio = temp.servicio,
+                        mascota = temp.mascota,
+                        precioUnitario = temp.precio
+                    )
+                )
+            }
+            val guardada = citaRepository.save(cita)
+            val paymentUrl = pagoService.crearPreferencia(
+                titulo = "Reserva Clínica - ${tempList.size} items",
+                precio = guardada.precioFinal,
+                externalReference = guardada.id!!.toString()
+            )
+            guardada.paymentUrl = paymentUrl
+            return ReservaResult(guardada, paymentUrl)
+        }
+    }
+
+    @Transactional
+    fun confirmar(id: UUID, tutor: JwtPayload): Cita {
+        val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
+        if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes confirmar esta cita")
+        cita.estado = EstadoCita.CONFIRMADA
+        return citaRepository.save(cita)
+    }
+
+    @Transactional
+    fun cancelar(id: UUID, tutor: JwtPayload): Cita {
+        val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
+        if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes cancelar esta cita")
+
+        // Solo permitimos cancelar citas que no estén ya canceladas o completadas
+        if (cita.estado == EstadoCita.CANCELADA) {
+            throw BadRequestException("La cita ya está cancelada")
+        }
+
+        // Reponer stock si corresponde
+        reponerStock(cita)
+
+        cita.estado = EstadoCita.CANCELADA
+        return citaRepository.save(cita)
+    }
+
+    private fun reponerStock(cita: Cita) {
+        cita.detalles.forEach { detalle ->
+            val servicio = detalle.servicio
+            if (servicio.categoria == CategoriaServicio.PRODUCTO) {
+                inventarioService.devolverStock(servicio)
+            }
+        }
+    }
+
+    @Transactional(readOnly = true)
+    fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
+        val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
+
+        // Auto-healing: sincronizar estados de pago pendientes con Mercado Pago
+        citas
+            .filter { it.estado == EstadoCita.PENDIENTE_PAGO && it.id != null }
+            .forEach { cita ->
+                try {
+                    val estadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
+                    if (estadoPago == EstadoPagoMP.APROBADO) {
+                        logger.info("[AUTO_HEALING] Cita {} actualizada a CONFIRMADA por pago aprobado en MP", cita.id)
+                        cita.estado = EstadoCita.CONFIRMADA
+                        citaRepository.save(cita)
+                    }
+                } catch (ex: Exception) {
+                    // No rompemos listar por problemas con MP; solo logueamos
+                    logger.error("[AUTO_HEALING] Error consultando estado de pago para cita {}", cita.id, ex)
+                }
+            }
+
+        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
+    }
+}
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/servicios/api/ServicioDtos.kt">
+package cl.clinipets.servicios.api
 
 import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ReglaPrecio
 import cl.clinipets.servicios.domain.ServicioMedico
-import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.Especie
-import org.springframework.boot.ApplicationArguments
-import org.springframework.boot.ApplicationRunner
-import org.springframework.stereotype.Component
-import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
+import java.util.UUID
 
-@Component
-class DataSeeder(
-    private val servicioMedicoRepository: ServicioMedicoRepository
-) : ApplicationRunner {
-    @Transactional
-    override fun run(args: ApplicationArguments?) {
-        if (servicioMedicoRepository.count() > 0) return
+data class ReglaPrecioDto(
+    val id: UUID,
+    val pesoMin: BigDecimal,
+    val pesoMax: BigDecimal,
+    val precio: Int
+)
 
-        val consulta = ServicioMedico(
-            nombre = "Consulta General",
-            precioBase = 8000,
-            requierePeso = false,
-            duracionMinutos = 30,
-            activo = true,
-            categoria = CategoriaServicio.CONSULTA,
-            especiesPermitidas = mutableSetOf() // Todas
-        )
+data class ServicioMedicoDto(
+    val id: UUID,
+    val nombre: String,
+    val precioBase: Int,
+    val requierePeso: Boolean,
+    val duracionMinutos: Int,
+    val activo: Boolean,
+    val categoria: CategoriaServicio,
+    val especiesPermitidas: Set<Especie>,
+    val stock: Int?,
+    val reglas: List<ReglaPrecioDto>
+)
 
-        val esterilizacion = ServicioMedico(
-            nombre = "Esterilización Canina",
-            precioBase = 30000, // base mínima
-            requierePeso = true,
-            duracionMinutos = 60,
-            activo = true,
-            categoria = CategoriaServicio.CIRUGIA,
-            especiesPermitidas = mutableSetOf(Especie.PERRO)
-        )
-        val reglasEsterilizacion = listOf(
-            ReglaPrecio(
-                pesoMin = BigDecimal("0.0"),
-                pesoMax = BigDecimal("10.0"),
-                precio = 30000,
-                servicio = esterilizacion
-            ),
-            ReglaPrecio(
-                pesoMin = BigDecimal("10.0"),
-                pesoMax = BigDecimal("15.0"),
-                precio = 34000,
-                servicio = esterilizacion
-            ),
-            ReglaPrecio(
-                pesoMin = BigDecimal("15.0"),
-                pesoMax = BigDecimal("20.0"),
-                precio = 38000,
-                servicio = esterilizacion
-            ),
-            ReglaPrecio(
-                pesoMin = BigDecimal("20.0"),
-                pesoMax = BigDecimal("30.0"),
-                precio = 45000,
-                servicio = esterilizacion
-            )
-        )
-        esterilizacion.reglas.addAll(reglasEsterilizacion)
+fun ServicioMedico.toDto() = ServicioMedicoDto(
+    id = id!!,
+    nombre = nombre,
+    precioBase = precioBase,
+    requierePeso = requierePeso,
+    duracionMinutos = duracionMinutos,
+    activo = activo,
+    categoria = categoria,
+    especiesPermitidas = especiesPermitidas,
+    stock = stock,
+    reglas = reglas.map(ReglaPrecio::toDto)
+)
 
-        val vacunas = ServicioMedico(
-            nombre = "Vacunas",
-            precioBase = 12000,
-            requierePeso = false,
-            duracionMinutos = 15,
-            activo = true,
-            categoria = CategoriaServicio.VACUNA,
-            especiesPermitidas = mutableSetOf(), // Todas
-            stock = 100
-        )
+fun ReglaPrecio.toDto() = ReglaPrecioDto(
+    id = id!!,
+    pesoMin = pesoMin,
+    pesoMax = pesoMax,
+    precio = precio
+)
+</file>
 
-        val churu = ServicioMedico(
-            nombre = "Churu Atún",
-            precioBase = 3000,
-            requierePeso = false,
-            duracionMinutos = 0,
-            activo = true,
-            categoria = CategoriaServicio.PRODUCTO,
-            especiesPermitidas = mutableSetOf(Especie.GATO),
-            stock = 50
-        )
+<file path="src/main/kotlin/cl/clinipets/servicios/domain/ServicioMedico.kt">
+package cl.clinipets.servicios.domain
 
-        servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas, churu))
+import cl.clinipets.core.domain.AuditableEntity
+import cl.clinipets.veterinaria.domain.Especie
+import cl.clinipets.veterinaria.domain.Mascota
+import jakarta.persistence.*
+import java.util.UUID
+
+@Entity
+@Table(name = "servicios_medicos")
+data class ServicioMedico(
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    val id: UUID? = null,
+
+    @Column(nullable = false, unique = true)
+    val nombre: String,
+
+    @Column(nullable = false)
+    val precioBase: Int,
+
+    @Column(nullable = false)
+    val requierePeso: Boolean,
+
+    @Column(nullable = false)
+    val duracionMinutos: Int,
+
+    @Column(nullable = false)
+    val activo: Boolean = true,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    var categoria: CategoriaServicio = CategoriaServicio.OTRO,
+
+    @ElementCollection(targetClass = Especie::class, fetch = FetchType.EAGER)
+    @CollectionTable(name = "servicio_especies", joinColumns = [JoinColumn(name = "servicio_id")])
+    @Enumerated(EnumType.STRING)
+    @Column(name = "especie", nullable = false)
+    var especiesPermitidas: MutableSet<Especie> = mutableSetOf(),
+
+    @Column(nullable = true)
+    var stock: Int? = null,
+
+    @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    val reglas: MutableList<ReglaPrecio> = mutableListOf()
+) : AuditableEntity() {
+    fun calcularPrecioPara(mascota: Mascota): Int {
+        if (!requierePeso) return precioBase
+        val regla = reglas.firstOrNull {
+            (mascota.pesoActual >= it.pesoMin) && (mascota.pesoActual <= it.pesoMax)
+        }
+        return regla?.precio ?: precioBase
     }
 }
 </file>
@@ -3884,6 +3959,102 @@ class PingController() {
                 user = principal?.email
             )
         )
+    }
+}
+</file>
+
+<file path="src/main/kotlin/cl/clinipets/core/config/DataSeeder.kt">
+package cl.clinipets.core.config
+
+import cl.clinipets.servicios.domain.CategoriaServicio
+import cl.clinipets.servicios.domain.ReglaPrecio
+import cl.clinipets.servicios.domain.ServicioMedico
+import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.veterinaria.domain.Especie
+import org.springframework.boot.ApplicationArguments
+import org.springframework.boot.ApplicationRunner
+import org.springframework.stereotype.Component
+import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
+
+@Component
+class DataSeeder(
+    private val servicioMedicoRepository: ServicioMedicoRepository
+) : ApplicationRunner {
+    @Transactional
+    override fun run(args: ApplicationArguments?) {
+        if (servicioMedicoRepository.count() > 0) return
+
+        val consulta = ServicioMedico(
+            nombre = "Consulta General",
+            precioBase = 8000,
+            requierePeso = false,
+            duracionMinutos = 30,
+            activo = true,
+            categoria = CategoriaServicio.CONSULTA,
+            especiesPermitidas = mutableSetOf() // Todas
+        )
+
+        val esterilizacion = ServicioMedico(
+            nombre = "Esterilización Canina",
+            precioBase = 30000, // base mínima
+            requierePeso = true,
+            duracionMinutos = 60,
+            activo = true,
+            categoria = CategoriaServicio.CIRUGIA,
+            especiesPermitidas = mutableSetOf(Especie.PERRO)
+        )
+        val reglasEsterilizacion = listOf(
+            ReglaPrecio(
+                pesoMin = BigDecimal("0.0"),
+                pesoMax = BigDecimal("10.0"),
+                precio = 30000,
+                servicio = esterilizacion
+            ),
+            ReglaPrecio(
+                pesoMin = BigDecimal("10.0"),
+                pesoMax = BigDecimal("15.0"),
+                precio = 34000,
+                servicio = esterilizacion
+            ),
+            ReglaPrecio(
+                pesoMin = BigDecimal("15.0"),
+                pesoMax = BigDecimal("20.0"),
+                precio = 38000,
+                servicio = esterilizacion
+            ),
+            ReglaPrecio(
+                pesoMin = BigDecimal("20.0"),
+                pesoMax = BigDecimal("30.0"),
+                precio = 45000,
+                servicio = esterilizacion
+            )
+        )
+        esterilizacion.reglas.addAll(reglasEsterilizacion)
+
+        val vacunas = ServicioMedico(
+            nombre = "Vacunas",
+            precioBase = 12000,
+            requierePeso = false,
+            duracionMinutos = 15,
+            activo = true,
+            categoria = CategoriaServicio.VACUNA,
+            especiesPermitidas = mutableSetOf(), // Todas
+            stock = 100
+        )
+
+        val churu = ServicioMedico(
+            nombre = "Churu Atún",
+            precioBase = 3000,
+            requierePeso = false,
+            duracionMinutos = 0,
+            activo = true,
+            categoria = CategoriaServicio.PRODUCTO,
+            especiesPermitidas = mutableSetOf(Especie.GATO),
+            stock = 50
+        )
+
+        servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas, churu))
     }
 }
 </file>

@@ -36,7 +36,17 @@ class ReservaController(
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
         val cita = reservaService.confirmar(id, principal)
-        return ResponseEntity.ok(cita.toResponse())
+        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+    }
+
+    @Operation(summary = "Cancelar reserva", operationId = "cancelarReserva")
+    @DeleteMapping("/{id}")
+    fun cancelar(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<CitaResponse> {
+        val cita = reservaService.cancelar(id, principal)
+        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
     }
 
     @Operation(summary = "Listar reservas", operationId = "listarReservas")

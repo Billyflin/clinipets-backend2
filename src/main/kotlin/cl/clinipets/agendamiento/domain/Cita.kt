@@ -33,5 +33,8 @@ data class Cita(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
-    val origen: OrigenCita
+    val origen: OrigenCita,
+
+    @Column(length = 1024)
+    var paymentUrl: String? = null
 ) : AuditableEntity()

@@ -1,10 +1,12 @@
 package cl.clinipets.pagos.application
 
 import com.mercadopago.MercadoPagoConfig
+import com.mercadopago.client.payment.PaymentClient
 import com.mercadopago.client.preference.PreferenceBackUrlsRequest
 import com.mercadopago.client.preference.PreferenceClient
 import com.mercadopago.client.preference.PreferenceItemRequest
 import com.mercadopago.client.preference.PreferenceRequest
+import com.mercadopago.net.MPSearchRequest
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
@@ -12,6 +14,12 @@ import java.math.BigDecimal
 
 interface PagoService {
     fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String
+    fun consultarEstadoPago(externalReference: String): EstadoPagoMP
+}
+
+enum class EstadoPagoMP {
+    APROBADO,
+    OTRO
 }
 
 @Component
@@ -30,6 +38,7 @@ class MercadoPagoService(
         logger.info("Creando preferencia MP - Titulo: {}, Precio: {}, Ref: {}", titulo, precio, externalReference)
 
         val client = PreferenceClient()
+
         val item = PreferenceItemRequest.builder()
             .title(titulo)
             .quantity(1)
@@ -51,9 +60,50 @@ class MercadoPagoService(
             .build()
 
         val preference = client.create(request)
-
-        logger.info("Preferencia MP creada exitosamente. InitPoint: {}", preference.initPoint)
-
+        logger.info("Preferencia MP creada. InitPoint: {}", preference.initPoint)
         return preference.initPoint
+    }
+
+    override fun consultarEstadoPago(externalReference: String): EstadoPagoMP {
+        if (externalReference.isBlank()) return EstadoPagoMP.OTRO
+
+        return try {
+            val client = PaymentClient()
+
+            val filters = HashMap<String, Any>()
+            filters["external_reference"] = externalReference
+
+            // FIX: Agregamos limit(1) y offset(0) explícitamente para evitar NPE en el SDK
+            val searchRequest = MPSearchRequest.builder()
+                .filters(filters)
+                .limit(10)
+                .offset(0)
+                .build()
+
+            val searchResults = client.search(searchRequest)
+
+            val payments = searchResults.results ?: emptyList()
+
+            // Log para debug
+            if (payments.isEmpty()) {
+                logger.debug("[Auto-Healing] Búsqueda retornó 0 pagos para Ref: {}", externalReference)
+            }
+
+            val pagoAprobado = payments.firstOrNull { payment ->
+                "approved".equals(payment.status, ignoreCase = true)
+            }
+
+            if (pagoAprobado != null) {
+                logger.info("[Auto-Healing] Pago encontrado y APROBADO. ID: {}, Ref: {}", pagoAprobado.id, externalReference)
+                EstadoPagoMP.APROBADO
+            } else {
+                EstadoPagoMP.OTRO
+            }
+
+        } catch (e: Exception) {
+            // El log mostrará la excepción real si vuelve a ocurrir, pero no tumbará la app
+            logger.error("[Auto-Healing] Error al consultar MercadoPago para Ref: {}", externalReference, e)
+            EstadoPagoMP.OTRO
+        }
     }
 }

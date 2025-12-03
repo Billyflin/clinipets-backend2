@@ -12,6 +12,7 @@ import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
+import cl.clinipets.pagos.application.EstadoPagoMP
 import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.application.InventarioService
 import cl.clinipets.servicios.domain.CategoriaServicio
@@ -156,6 +157,7 @@ class ReservaService(
                 precio = guardada.precioFinal,
                 externalReference = guardada.id!!.toString()
             )
+            guardada.paymentUrl = paymentUrl
             return ReservaResult(guardada, paymentUrl)
         } else {
             // Caso de productos sin duración (Venta directa o retiro)
@@ -185,6 +187,7 @@ class ReservaService(
                 precio = guardada.precioFinal,
                 externalReference = guardada.id!!.toString()
             )
+            guardada.paymentUrl = paymentUrl
             return ReservaResult(guardada, paymentUrl)
         }
     }
@@ -197,9 +200,53 @@ class ReservaService(
         return citaRepository.save(cita)
     }
 
+    @Transactional
+    fun cancelar(id: UUID, tutor: JwtPayload): Cita {
+        val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
+        if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes cancelar esta cita")
+
+        // Solo permitimos cancelar citas que no estén ya canceladas o completadas
+        if (cita.estado == EstadoCita.CANCELADA) {
+            throw BadRequestException("La cita ya está cancelada")
+        }
+
+        // Reponer stock si corresponde
+        reponerStock(cita)
+
+        cita.estado = EstadoCita.CANCELADA
+        return citaRepository.save(cita)
+    }
+
+    private fun reponerStock(cita: Cita) {
+        cita.detalles.forEach { detalle ->
+            val servicio = detalle.servicio
+            if (servicio.categoria == CategoriaServicio.PRODUCTO) {
+                inventarioService.devolverStock(servicio)
+            }
+        }
+    }
+
     @Transactional(readOnly = true)
     fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
         val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
-        return citas.map { it.toDetalladaResponse() }
+
+        // Auto-healing: sincronizar estados de pago pendientes con Mercado Pago
+        citas
+            .filter { it.estado == EstadoCita.PENDIENTE_PAGO && it.id != null }
+            .forEach { cita ->
+                try {
+                    val estadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
+                    if (estadoPago == EstadoPagoMP.APROBADO) {
+                        logger.info("[AUTO_HEALING] Cita {} actualizada a CONFIRMADA por pago aprobado en MP", cita.id)
+                        cita.estado = EstadoCita.CONFIRMADA
+                        citaRepository.save(cita)
+                    }
+                } catch (ex: Exception) {
+                    // No rompemos listar por problemas con MP; solo logueamos
+                    logger.error("[AUTO_HEALING] Error consultando estado de pago para cita {}", cita.id, ex)
+                }
+            }
+
+        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
     }
 }

@@ -21,4 +21,12 @@ class InventarioService(
         servicio.stock = servicio.stock!! - cantidad
         servicioMedicoRepository.save(servicio)
     }
+
+    @Transactional
+    fun devolverStock(servicio: ServicioMedico, cantidad: Int = 1) {
+        if (servicio.stock == null) return
+
+        servicio.stock = servicio.stock!! + cantidad
+        servicioMedicoRepository.save(servicio)
+    }
 }
