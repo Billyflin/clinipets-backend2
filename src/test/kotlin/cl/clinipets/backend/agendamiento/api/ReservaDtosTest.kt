@@ -1,8 +1,11 @@
 package cl.clinipets.backend.agendamiento.api
 
-import cl.clinipets.backend.agendamiento.domain.Cita
-import cl.clinipets.backend.agendamiento.domain.EstadoCita
-import cl.clinipets.backend.agendamiento.domain.OrigenCita
+import cl.clinipets.agendamiento.api.CitaResponse
+import cl.clinipets.agendamiento.api.ReservaCreateRequest
+import cl.clinipets.agendamiento.api.toResponse
+import cl.clinipets.agendamiento.domain.Cita
+import cl.clinipets.agendamiento.domain.EstadoCita
+import cl.clinipets.agendamiento.domain.OrigenCita
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import java.time.Instant
@@ -41,7 +44,18 @@ class ReservaDtosTest {
         val origen = OrigenCita.WEB
         val paymentUrl = "http://payment.url"
 
-        val response = CitaResponse(id, fechaHoraInicio, fechaHoraFin, estado, precioFinal, servicioId, mascotaId, tutorId, origen, paymentUrl)
+        val response = CitaResponse(
+            id,
+            fechaHoraInicio,
+            fechaHoraFin,
+            estado,
+            precioFinal,
+            servicioId,
+            mascotaId,
+            tutorId,
+            origen,
+            paymentUrl
+        )
 
         assertEquals(id, response.id)
         assertEquals(fechaHoraInicio, response.fechaHoraInicio)

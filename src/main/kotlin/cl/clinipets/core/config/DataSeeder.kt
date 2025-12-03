@@ -1,8 +1,8 @@
 package cl.clinipets.core.config
 
-import cl.clinipets.backend.servicios.domain.ReglaPrecio
-import cl.clinipets.backend.servicios.domain.ServicioMedico
-import cl.clinipets.backend.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.servicios.domain.ReglaPrecio
+import cl.clinipets.servicios.domain.ServicioMedico
+import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import org.springframework.boot.ApplicationArguments
 import org.springframework.boot.ApplicationRunner
 import org.springframework.stereotype.Component

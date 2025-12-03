@@ -31,6 +31,7 @@ class SecurityConfig(
                     "/api/auth/google",
                     "/api/v1/servicios/**",
                     "/api/v1/disponibilidad/**",
+                    "/api/public/**",
                     "/actuator/health",
                     "/index.html",
                     "/google-login.html",

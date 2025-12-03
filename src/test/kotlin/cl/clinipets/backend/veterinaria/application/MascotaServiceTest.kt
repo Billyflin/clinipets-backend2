@@ -1,12 +1,13 @@
 package cl.clinipets.backend.veterinaria.application
 
-import cl.clinipets.backend.veterinaria.api.MascotaCreateRequest
-import cl.clinipets.backend.veterinaria.domain.Especie
-import cl.clinipets.backend.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.api.MascotaCreateRequest
+import cl.clinipets.veterinaria.domain.Especie
+import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
+import cl.clinipets.veterinaria.application.MascotaService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -79,7 +80,7 @@ class MascotaServiceTest(
                 nombre = "Firulais",
                 especie = Especie.PERRO,
                 pesoActual = BigDecimal("8.5"),
-                fechaNacimiento = LocalDate.of(2022, 5, 10).atStartOfDay(ZoneId.systemDefault()).toInstant()
+                fechaNacimiento = LocalDate.of(2022, 5, 10)
             ),
             tutorPayload
         )
@@ -98,7 +99,7 @@ class MascotaServiceTest(
                 nombre = "Michi",
                 especie = Especie.GATO,
                 pesoActual = BigDecimal("4.2"),
-                fechaNacimiento = LocalDate.of(2023, 3, 15).atStartOfDay(ZoneId.systemDefault()).toInstant()
+                fechaNacimiento = LocalDate.of(2023, 3, 15)
             ),
             tutorPayload
         )

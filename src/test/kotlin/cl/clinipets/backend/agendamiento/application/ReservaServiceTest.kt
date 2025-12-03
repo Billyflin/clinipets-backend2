@@ -1,13 +1,14 @@
 package cl.clinipets.backend.agendamiento.application
 
-import cl.clinipets.backend.agendamiento.domain.OrigenCita
-import cl.clinipets.backend.pagos.application.PagoService
-import cl.clinipets.backend.servicios.domain.ReglaPrecio
-import cl.clinipets.backend.servicios.domain.ServicioMedico
-import cl.clinipets.backend.servicios.domain.ServicioMedicoRepository
-import cl.clinipets.backend.veterinaria.domain.Especie
-import cl.clinipets.backend.veterinaria.domain.Mascota
-import cl.clinipets.backend.veterinaria.domain.MascotaRepository
+import cl.clinipets.agendamiento.application.ReservaService
+import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.pagos.application.PagoService
+import cl.clinipets.servicios.domain.ReglaPrecio
+import cl.clinipets.servicios.domain.ServicioMedico
+import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.veterinaria.domain.Especie
+import cl.clinipets.veterinaria.domain.Mascota
+import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
@@ -26,9 +27,7 @@ import org.springframework.test.context.TestPropertySource
 import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalTime
 import java.time.ZoneId
-import java.util.UUID
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(
@@ -99,8 +98,8 @@ class ReservaServiceTest(
                 nombre = "Firulais",
                 especie = Especie.PERRO,
                 pesoActual = BigDecimal("8.5"),
-                // Usamos Instant para fecha de nacimiento (ej. start of day UTC o similar)
-                fechaNacimiento = LocalDate.of(2022, 5, 10).atStartOfDay(ZoneId.systemDefault()).toInstant(),
+                // Usamos LocalDate para fecha de nacimiento
+                fechaNacimiento = LocalDate.of(2022, 5, 10),
                 tutor = tutor
             )
         )

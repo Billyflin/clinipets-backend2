@@ -21,28 +21,36 @@ services:
 
   # 2. Tu Backend Spring Boot
   app:
-    image: ${BACKEND_IMAGE}
+    image: clinipets-backend:latest # O usa ${BACKEND_IMAGE} si lo prefieres
     container_name: clinipets-app
     build: .
     environment:
+      # Usamos 'dev' porque es tu entorno real de trabajo
       SPRING_PROFILES_ACTIVE: dev
-      # --- CORRECCIÓN: Usamos la URL directa para evitar errores de mapeo ---
+
+      # Conexión a la DB del contenedor
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME}
       SPRING_DATASOURCE_USERNAME: ${DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-      # --------------------------------------------------------------------
+
+      # Variables de Negocio
       JWT_SECRET: ${JWT_SECRET}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN}
       N8N_API_KEY: ${N8N_API_KEY}
-      # N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL} # Descomenta si lo usas en el código
+
+      # ☢️ FIX NUCLEAR DE FECHAS (Vital para Android) ☢️
+      # Esto obliga a Spring a devolver "2025-12-01T10:00:00Z" (Texto)
+      # en lugar de [2025, 12, 1] o 17895623.00 (Números).
+      SPRING_JACKSON_SERIALIZATION_WRITE_DATES_AS_TIMESTAMPS: "false"
+      SPRING_JACKSON_TIME_ZONE: "UTC"
+
     ports:
       - "8080:8080"
     depends_on:
       db:
         condition: service_healthy
-    # Healthcheck robusto (Actuator)
     healthcheck:
       test: "curl -f http://localhost:8080/actuator/health || exit 1"
       interval: 30s
@@ -67,16 +75,13 @@ services:
       - n8n_data:/home/node/.n8n
     restart: unless-stopped
 
-  # 4. SonarQube (Configuración "Vibe Coding")
+  # 4. SonarQube
   sonarqube:
     image: sonarqube:community
     container_name: clinipets-sonar
     ports:
       - "9000:9000"
     environment:
-      # --- TRUCO: Usamos DB interna (H2) para evitar conflictos con Postgres ---
-      # Al quitar las variables JDBC, Sonar entiende que es modo "Prueba"
-      # Desactivamos chequeos estrictos de memoria para que levante fácil
       - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
     volumes:
       - sonar_data:/opt/sonarqube/data
