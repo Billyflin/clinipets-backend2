@@ -1,11 +1,14 @@
 package cl.clinipets.identity.application
 
+import cl.clinipets.core.integration.N8nService
 import cl.clinipets.core.security.JwtService
 import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.api.ProfileResponse
 import cl.clinipets.identity.api.TokenResponse
+import cl.clinipets.identity.api.UserUpdateRequest
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
@@ -20,7 +23,8 @@ class AuthService(
     private val userRepository: UserRepository,
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
-    private val googleTokenVerifier: GoogleTokenVerifier
+    private val googleTokenVerifier: GoogleTokenVerifier,
+    private val n8nService: N8nService
 ) {
     private val logger = LoggerFactory.getLogger(AuthService::class.java)
 
@@ -44,7 +48,38 @@ class AuthService(
             id = user.id!!,
             email = user.email,
             name = user.name,
-            role = user.role
+            role = user.role,
+            phone = user.phone,
+            address = user.address
+        )
+    }
+
+    @Transactional
+    fun updateProfile(userId: UUID, request: UserUpdateRequest): ProfileResponse {
+        logger.info("[AUTH_SERVICE] Actualizando perfil para usuario ID: {}", userId)
+        val user = userRepository.findById(userId)
+            .orElseThrow { NotFoundException("Usuario no encontrado") }
+
+        if (user.name != request.name) {
+            if (!n8nService.validarNombre(user.name, request.name)) {
+                throw BadRequestException("El nombre ingresado no cumple con las políticas de la comunidad (Validado por IA).")
+            }
+        }
+
+        user.name = request.name
+        user.phone = request.phone
+        user.address = request.address
+
+        val updatedUser = userRepository.save(user)
+        logger.info("[AUTH_SERVICE] Perfil actualizado para: {}", updatedUser.email)
+
+        return ProfileResponse(
+            id = updatedUser.id!!,
+            email = updatedUser.email,
+            name = updatedUser.name,
+            role = updatedUser.role,
+            phone = updatedUser.phone,
+            address = updatedUser.address
         )
     }
 
@@ -62,9 +97,13 @@ class AuthService(
             logger.warn("[AUTH_SERVICE] Email no verificado en Google: {}", email)
             throw UnauthorizedException("Email no verificado en Google")
         }
-        val name = payload["name"] as? String
-            ?: payload["given_name"] as? String
-            ?: "Google User"
+        val givenName = payload["given_name"] as? String
+        val familyName = payload["family_name"] as? String
+        val name = if (!givenName.isNullOrBlank() && !familyName.isNullOrBlank()) {
+            "$givenName $familyName"
+        } else {
+            payload["name"] as? String ?: givenName ?: "Google User"
+        }
 
         // Asignar STAFF si el email coincide con el objetivo, sino CLIENT
         val assignedRole = if (email == "billymartinezc@gmail.com") {

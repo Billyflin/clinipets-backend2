@@ -8,6 +8,7 @@ import org.springframework.http.ResponseEntity
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.PostMapping
+import org.springframework.web.bind.annotation.PutMapping
 import org.springframework.web.bind.annotation.RequestBody
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
@@ -45,6 +46,18 @@ class AuthController(
         logger.info("[ME] Inicio request - User: {}", principal.email)
         val response = authService.me(principal)
         logger.info("[ME] Fin request - Exitoso")
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Actualizar perfil de usuario", operationId = "updateProfile")
+    @PutMapping("/me")
+    fun updateMe(
+        @AuthenticationPrincipal principal: JwtPayload,
+        @Valid @RequestBody request: UserUpdateRequest
+    ): ResponseEntity<ProfileResponse> {
+        logger.info("[UPDATE_ME] Inicio request - User: {}", principal.email)
+        val response = authService.updateProfile(principal.userId, request)
+        logger.info("[UPDATE_ME] Fin request - Exitoso")
         return ResponseEntity.ok(response)
     }
 }

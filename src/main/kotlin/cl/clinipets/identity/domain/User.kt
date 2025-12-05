@@ -15,10 +15,13 @@ data class User(
     val email: String,
 
     @Column(nullable = false)
-    val name: String,
+    var name: String,
 
     @Column(nullable = false)
     val passwordHash: String,
+
+    var phone: String? = null,
+    var address: String? = null,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
