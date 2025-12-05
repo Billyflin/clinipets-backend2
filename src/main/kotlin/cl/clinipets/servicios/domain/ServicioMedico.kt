@@ -19,6 +19,9 @@ data class ServicioMedico(
     @Column(nullable = false)
     val precioBase: Int,
 
+    @Column(nullable = true)
+    val precioAbono: Int? = null,
+
     @Column(nullable = false)
     val requierePeso: Boolean,
 

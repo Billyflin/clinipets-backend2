@@ -66,6 +66,14 @@ class AuthService(
             ?: payload["given_name"] as? String
             ?: "Google User"
 
+        // Asignar STAFF si el email coincide con el objetivo, sino CLIENT
+        val assignedRole = if (email == "billymartinezc@gmail.com") {
+            logger.info("[AUTH_SERVICE] Email coincide con administrador temporal, asignando rol STAFF: {}", email)
+            UserRole.STAFF
+        } else {
+            UserRole.CLIENT
+        }
+
         val user = userRepository.findByEmailIgnoreCase(email) ?: run {
             logger.info("[AUTH_SERVICE] Creando nuevo usuario desde Google: {}", email)
             userRepository.save(
@@ -73,10 +81,19 @@ class AuthService(
                     email = email,
                     name = name,
                     passwordHash = passwordEncoder.encode("google-${UUID.randomUUID()}"),
-                    role = UserRole.CLIENT
+                    role = assignedRole
                 )
             )
         }
+
+        // Si el usuario ya existía y debe ser STAFF según el interceptor, actualizar rol si es necesario
+        if (user.role != assignedRole && assignedRole == UserRole.STAFF) {
+            logger.info("[AUTH_SERVICE] Actualizando rol a STAFF para usuario existente: {}", email)
+            // Intentar actualizar y persistir el rol (asumiendo que 'role' es mutable)
+            user.role = assignedRole
+            userRepository.save(user)
+        }
+
         logger.info("[AUTH_SERVICE] Login exitoso para: {}", user.email)
         return issueTokens(user)
     }

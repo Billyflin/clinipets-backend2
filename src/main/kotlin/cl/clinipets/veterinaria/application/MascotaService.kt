@@ -10,6 +10,7 @@ import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRepository
+import cl.clinipets.identity.domain.UserRole
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -79,10 +80,17 @@ class MascotaService(
         logger.info("[MASCOTA_SERVICE] Mascota eliminada")
     }
 
-    private fun findMascotaDeTutor(id: UUID, tutor: JwtPayload): Mascota {
+    private fun findMascotaDeTutor(id: UUID, requestingUser: JwtPayload): Mascota {
         val mascota = mascotaRepository.findById(id)
             .orElseThrow { NotFoundException("Mascota no encontrada") }
-        if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("No puedes acceder a esta mascota")
+        
+        val isOwner = mascota.tutor.id == requestingUser.userId
+        val isStaffOrAdmin = requestingUser.role == UserRole.STAFF || requestingUser.role == UserRole.ADMIN
+
+        if (!isOwner && !isStaffOrAdmin) {
+            logger.warn("[MASCOTA_SERVICE] Acceso denegado a mascota {}. Usuario: {}", id, requestingUser.email)
+            throw UnauthorizedException("No puedes acceder a esta mascota")
+        }
         return mascota
     }
 }

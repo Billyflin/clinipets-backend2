@@ -25,6 +25,18 @@ data class FichaClinica(
     val motivoConsulta: String,
 
     @Column(columnDefinition = "TEXT")
+    val anamnesis: String? = null,
+
+    @Column(columnDefinition = "TEXT")
+    val examenFisico: String? = null,
+
+    @Column(columnDefinition = "TEXT")
+    val tratamiento: String? = null,
+
+    @Column(nullable = true)
+    val pesoRegistrado: Double? = null,
+
+    @Column(columnDefinition = "TEXT")
     val observaciones: String? = null,
 
     @Column(columnDefinition = "TEXT")
@@ -35,7 +47,11 @@ data class FichaClinica(
 
     val nombreVacuna: String? = null,
 
-    val fechaProximaDosis: LocalDate? = null,
+    val fechaProximaVacuna: LocalDate? = null,
+    val fechaProximoControl: LocalDate? = null,
+    val fechaDesparasitacion: LocalDate? = null,
+
+    val fechaProximaDosis: LocalDate? = null, // Deprecated in favor of fechaProximaVacuna
 
     @Column(nullable = false)
     val autorId: UUID

@@ -22,7 +22,7 @@ data class User(
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
-    val role: UserRole = UserRole.CLIENT,
+    var role: UserRole = UserRole.CLIENT,
 
     @Column(nullable = false, updatable = false)
     val createdAt: Instant = Instant.now()

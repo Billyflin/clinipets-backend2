@@ -8,6 +8,7 @@ import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.DetalleCita
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.agendamiento.domain.TipoAtencion
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
@@ -47,13 +48,19 @@ class ReservaService(
         detallesRequest: List<DetalleReservaRequest>,
         fechaHoraInicio: Instant,
         origen: OrigenCita,
-        tutor: JwtPayload
+        tutor: JwtPayload,
+        tipoAtencion: TipoAtencion = TipoAtencion.CLINICA,
+        direccion: String? = null
     ): ReservaResult {
         logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Items: ${detallesRequest.size}, FechaSolicitada(UTC/Raw): $fechaHoraInicio")
 
         if (detallesRequest.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio o producto")
+        if (tipoAtencion == TipoAtencion.DOMICILIO && direccion.isNullOrBlank()) {
+             throw BadRequestException("Debe especificar una dirección para atención a domicilio")
+        }
 
         var totalPrecio = 0
+        var totalAbono = 0
         var duracionTotalMinutos = 0L
 
         // We need a temporary object to hold the data before creating DetalleCita with the Cita reference
@@ -100,13 +107,17 @@ class ReservaService(
                 duracionTotalMinutos += servicio.duracionMinutos
             }
 
-            logger.debug("   -> Item Agregado: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: $precioItem")
+            // Abono logic: use specific deposit price if set, otherwise full price
+            val abonoItem = servicio.precioAbono ?: precioItem
+            
+            logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: $precioItem | Abono: $abonoItem")
 
             totalPrecio += precioItem
+            totalAbono += abonoItem
             tempList.add(TempDetalle(servicio, mascota, precioItem))
         }
 
-        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Duración Total Acumulada: $duracionTotalMinutos min. Precio Total: $totalPrecio")
+        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Duración Total: $duracionTotalMinutos min. Precio Total: $totalPrecio. Abono Total: $totalAbono")
 
         // Validate Availability for the total duration
         if (duracionTotalMinutos > 0) {
@@ -121,7 +132,7 @@ class ReservaService(
             val slotValido = slotsDisponibles.any { it.compareTo(fechaNormalizada) == 0 }
 
             if (!slotValido) {
-                logger.warn(">>> [ERROR_DISPONIBILIDAD] El slot solicitado $fechaNormalizada NO se encontró en los slots disponibles generados: $slotsDisponibles")
+                logger.warn(">>> [ERROR_DISPONIBILIDAD] El slot solicitado $fechaNormalizada NO se encontró en los slots disponibles")
                 throw BadRequestException("El horario seleccionado no está disponible para la duración total ($duracionTotalMinutos min)")
             }
 
@@ -135,8 +146,11 @@ class ReservaService(
                 fechaHoraFin = fechaHoraFin,
                 estado = EstadoCita.PENDIENTE_PAGO,
                 precioFinal = totalPrecio,
+                montoAbono = totalAbono,
                 tutorId = tutor.userId,
-                origen = origen
+                origen = origen,
+                tipoAtencion = tipoAtencion,
+                direccion = direccion
             )
 
             // Now create DetalleCita objects linked to the Cita
@@ -155,8 +169,8 @@ class ReservaService(
             logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
 
             val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Reserva Clínica - ${tempList.size} items",
-                precio = guardada.precioFinal,
+                titulo = "Reserva Clínica (Abono) - ${tempList.size} items",
+                precio = guardada.montoAbono, // Charge ONLY the deposit amount
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
@@ -170,8 +184,11 @@ class ReservaService(
                 fechaHoraFin = fechaHoraInicio,
                 estado = EstadoCita.PENDIENTE_PAGO,
                 precioFinal = totalPrecio,
+                montoAbono = totalAbono,
                 tutorId = tutor.userId,
-                origen = origen
+                origen = origen,
+                tipoAtencion = tipoAtencion,
+                direccion = direccion
             )
             tempList.forEach { temp ->
                 cita.detalles.add(
@@ -185,8 +202,8 @@ class ReservaService(
             }
             val guardada = citaRepository.save(cita)
             val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Reserva Clínica - ${tempList.size} items",
-                precio = guardada.precioFinal,
+                titulo = "Reserva Clínica (Abono) - ${tempList.size} items",
+                precio = guardada.montoAbono,
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
@@ -264,6 +281,42 @@ class ReservaService(
                 }
             }
 
+        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
+    }
+
+    @Transactional(readOnly = true)
+    fun obtenerReserva(id: UUID, solicitante: JwtPayload): CitaDetalladaResponse {
+        logger.info("[OBTENER_RESERVA] Request. ID: {}, Solicitante: {}", id, solicitante.email)
+        val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
+
+        // Security check: Allow if user is Staff/Admin OR if user is the tutor (owner)
+        if (solicitante.role != UserRole.STAFF && solicitante.role != UserRole.ADMIN) {
+            if (cita.tutorId != solicitante.userId) {
+                logger.warn("[OBTENER_RESERVA] Acceso denegado. User: {} intentó acceder a Cita: {}", solicitante.email, id)
+                throw UnauthorizedException("No tienes permiso para ver esta reserva")
+            }
+        }
+        logger.info("[OBTENER_RESERVA] Acceso permitido. Retornando detalle.")
+        return cita.toDetalladaResponse(cita.paymentUrl)
+    }
+
+    @Transactional(readOnly = true)
+    fun obtenerHistorialMascota(mascotaId: UUID, solicitante: JwtPayload): List<CitaDetalladaResponse> {
+        logger.info("[HISTORIAL_MASCOTA] Request. MascotaID: {}, Solicitante: {}", mascotaId, solicitante.email)
+
+        // Security Check
+        if (solicitante.role != UserRole.STAFF && solicitante.role != UserRole.ADMIN) {
+            val mascota = mascotaRepository.findById(mascotaId)
+                .orElseThrow { NotFoundException("Mascota no encontrada") }
+            
+            if (mascota.tutor.id != solicitante.userId) {
+                logger.warn("[HISTORIAL_MASCOTA] Acceso denegado. User {} no es dueño de Mascota {}", solicitante.email, mascotaId)
+                throw UnauthorizedException("No tienes permiso para ver el historial de esta mascota")
+            }
+        }
+
+        val citas = citaRepository.findAllByMascotaId(mascotaId)
+        logger.info("[HISTORIAL_MASCOTA] Encontradas {} citas para mascota {}", citas.size, mascotaId)
         return citas.map { it.toDetalladaResponse(it.paymentUrl) }
     }
 

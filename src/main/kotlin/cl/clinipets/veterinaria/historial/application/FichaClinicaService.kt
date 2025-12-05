@@ -25,16 +25,29 @@ class FichaClinicaService(
         val mascota = mascotaRepository.findById(request.mascotaId)
             .orElseThrow { NotFoundException("Mascota no encontrada con ID: ${request.mascotaId}") }
 
+        // Actualizar peso si viene registrado
+        if (request.pesoRegistrado != null) {
+            logger.info("[FICHA_SERVICE] Actualizando peso mascota: {} -> {}", mascota.pesoActual, request.pesoRegistrado)
+            mascota.pesoActual = java.math.BigDecimal.valueOf(request.pesoRegistrado)
+            mascotaRepository.save(mascota)
+        }
+
         val ficha = fichaRepository.save(
             FichaClinica(
                 mascota = mascota,
                 fechaAtencion = request.fechaAtencion,
                 motivoConsulta = request.motivoConsulta,
+                anamnesis = request.anamnesis,
+                examenFisico = request.examenFisico,
+                tratamiento = request.tratamiento,
+                pesoRegistrado = request.pesoRegistrado,
                 observaciones = request.observaciones,
                 diagnostico = request.diagnostico,
                 esVacuna = request.esVacuna,
                 nombreVacuna = request.nombreVacuna,
-                fechaProximaDosis = request.fechaProximaDosis,
+                fechaProximaVacuna = request.fechaProximaVacuna,
+                fechaProximoControl = request.fechaProximoControl,
+                fechaDesparasitacion = request.fechaDesparasitacion,
                 autorId = autorId
             )
         )

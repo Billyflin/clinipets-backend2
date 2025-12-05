@@ -13,11 +13,17 @@ data class FichaCreateRequest(
     val fechaAtencion: Instant = Instant.now(),
     @field:NotBlank(message = "El motivo de consulta es obligatorio")
     val motivoConsulta: String,
+    val anamnesis: String? = null,
+    val examenFisico: String? = null,
+    val tratamiento: String? = null,
+    val pesoRegistrado: Double? = null,
     val observaciones: String? = null,
     val diagnostico: String? = null,
     val esVacuna: Boolean = false,
     val nombreVacuna: String? = null,
-    val fechaProximaDosis: LocalDate? = null
+    val fechaProximaVacuna: LocalDate? = null,
+    val fechaProximoControl: LocalDate? = null,
+    val fechaDesparasitacion: LocalDate? = null
 )
 
 data class FichaResponse(
@@ -25,11 +31,17 @@ data class FichaResponse(
     val mascotaId: UUID,
     val fechaAtencion: Instant,
     val motivoConsulta: String,
+    val anamnesis: String?,
+    val examenFisico: String?,
+    val tratamiento: String?,
+    val pesoRegistrado: Double?,
     val observaciones: String?,
     val diagnostico: String?,
     val esVacuna: Boolean,
     val nombreVacuna: String?,
-    val fechaProximaDosis: LocalDate?,
+    val fechaProximaVacuna: LocalDate?,
+    val fechaProximoControl: LocalDate?,
+    val fechaDesparasitacion: LocalDate?,
     val autorId: UUID
 )
 
@@ -38,10 +50,16 @@ fun FichaClinica.toResponse() = FichaResponse(
     mascotaId = mascota.id!!,
     fechaAtencion = fechaAtencion,
     motivoConsulta = motivoConsulta,
+    anamnesis = anamnesis,
+    examenFisico = examenFisico,
+    tratamiento = tratamiento,
+    pesoRegistrado = pesoRegistrado,
     observaciones = observaciones,
     diagnostico = diagnostico,
     esVacuna = esVacuna,
     nombreVacuna = nombreVacuna,
-    fechaProximaDosis = fechaProximaDosis,
+    fechaProximaVacuna = fechaProximaVacuna,
+    fechaProximoControl = fechaProximoControl,
+    fechaDesparasitacion = fechaDesparasitacion,
     autorId = autorId
 )

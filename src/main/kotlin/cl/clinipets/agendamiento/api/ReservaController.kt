@@ -31,7 +31,9 @@ class ReservaController(
             detallesRequest = request.detalles,
             fechaHoraInicio = request.fechaHoraInicio,
             origen = request.origen,
-            tutor = principal
+            tutor = principal,
+            tipoAtencion = request.tipoAtencion,
+            direccion = request.direccion
         )
         logger.info("[CREAR_RESERVA] Fin request - Exitoso. ID Cita: {}", result.cita.id)
         return ResponseEntity.ok(result.cita.toResponse(result.paymentUrl))
@@ -69,6 +71,30 @@ class ReservaController(
         logger.info("[LISTAR_RESERVAS] Request. Tutor: {}", principal.email)
         val response = reservaService.listar(principal)
         logger.info("[LISTAR_RESERVAS] Fin request - Encontradas: {}", response.size)
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Obtener reserva por ID", operationId = "obtenerReserva")
+    @GetMapping("/{id}")
+    fun obtener(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<CitaDetalladaResponse> {
+        logger.info("[OBTENER_RESERVA] Request. ID: {}, User: {}", id, principal.email)
+        val response = reservaService.obtenerReserva(id, principal)
+        logger.info("[OBTENER_RESERVA] Fin request - Exitoso")
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Obtener historial de citas de una mascota", operationId = "historialMascota")
+    @GetMapping("/mascota/{mascotaId}")
+    fun historialMascota(
+        @PathVariable mascotaId: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<List<CitaDetalladaResponse>> {
+        logger.info("[HISTORIAL_MASCOTA] Request. MascotaID: {}, User: {}", mascotaId, principal.email)
+        val response = reservaService.obtenerHistorialMascota(mascotaId, principal)
+        logger.info("[HISTORIAL_MASCOTA] Fin request - Registros: {}", response.size)
         return ResponseEntity.ok(response)
     }
 

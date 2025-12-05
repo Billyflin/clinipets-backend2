@@ -35,6 +35,16 @@ data class Cita(
     @Column(nullable = false, length = 16)
     val origen: OrigenCita,
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    val tipoAtencion: TipoAtencion = TipoAtencion.CLINICA,
+
+    @Column(length = 255)
+    val direccion: String? = null,
+
+    @Column(nullable = false)
+    val montoAbono: Int = 0,
+
     @Column(length = 1024)
     var paymentUrl: String? = null,
 

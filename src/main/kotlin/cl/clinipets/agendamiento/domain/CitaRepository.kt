@@ -15,4 +15,7 @@ interface CitaRepository : JpaRepository<Cita, UUID> {
     fun findAllByTutorIdOrderByFechaHoraInicioDesc(tutorId: UUID): List<Cita>
 
     fun findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(start: Instant, end: Instant): List<Cita>
+
+    @org.springframework.data.jpa.repository.Query("SELECT DISTINCT c FROM Cita c JOIN c.detalles d WHERE d.mascota.id = :mascotaId ORDER BY c.fechaHoraInicio DESC")
+    fun findAllByMascotaId(mascotaId: UUID): List<Cita>
 }
