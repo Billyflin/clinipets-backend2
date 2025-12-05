@@ -31,3 +31,7 @@ certs/
 
 /clinipets.pem
 /entityManagerFactory(EntityManagerFactoryBuilder, PersistenceManagedTypes).md
+
+firebase-service-account.json
+service-account.json
+*.json

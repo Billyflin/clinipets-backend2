@@ -106,7 +106,7 @@ class AuthService(
         }
 
         // Asignar STAFF si el email coincide con el objetivo, sino CLIENT
-        val assignedRole = if (email == "billymartinezc@gmail.com") {
+        val assignedRole = if (email == "billymartinezc@gmail.com" || email == "andreea.aebc@gmail.com"){
             logger.info("[AUTH_SERVICE] Email coincide con administrador temporal, asignando rol STAFF: {}", email)
             UserRole.STAFF
         } else {

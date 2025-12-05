@@ -48,6 +48,7 @@ dependencies {
     // Google ID Token verification
     implementation("com.google.api-client:google-api-client:2.8.1")
     implementation("com.google.http-client:google-http-client-jackson2:1.43.3")
+    implementation("com.google.firebase:firebase-admin:9.2.0")
 
     implementation("com.google.guava:guava:32.0.1-jre")
 

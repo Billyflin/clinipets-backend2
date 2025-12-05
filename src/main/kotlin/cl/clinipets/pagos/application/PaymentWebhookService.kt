@@ -2,6 +2,7 @@ package cl.clinipets.pagos.application
 
 import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.EstadoCita
+import cl.clinipets.core.integration.NotificationService
 import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
@@ -11,7 +12,8 @@ import java.util.UUID
 @Service
 class PaymentWebhookService(
     private val mercadoPagoService: MercadoPagoService,
-    private val citaRepository: CitaRepository
+    private val citaRepository: CitaRepository,
+    private val notificationService: NotificationService
 ) {
     private val logger = LoggerFactory.getLogger(PaymentWebhookService::class.java)
 
@@ -55,6 +57,7 @@ class PaymentWebhookService(
                         cita.mpPaymentId = paymentId
                         citaRepository.save(cita)
                         logger.info("[WEBHOOK_PROCESSOR] Cita {} actualizada a CONFIRMADA por webhook.", citaId)
+                        enviarNotificacionesPago(cita.tutorId, citaId)
                     } else {
                         logger.info("[WEBHOOK_PROCESSOR] La cita {} ya estaba en estado {}. No se actualiza.", citaId, cita.estado)
                     }
@@ -68,5 +71,16 @@ class PaymentWebhookService(
             logger.error("[WEBHOOK_PROCESSOR] Error procesando notificación para Payment ID: {}", paymentId, e)
         }
     }
-}
 
+    private fun enviarNotificacionesPago(tutorId: UUID, citaId: UUID) {
+        notificationService.enviarNotificacion(
+            tutorId,
+            "¡Reserva Confirmada!",
+            "Tu pago fue aprobado y la cita $citaId quedó confirmada."
+        )
+        notificationService.enviarNotificacionAStaff(
+            "Pago confirmado",
+            "Pago aprobado por webhook para la cita $citaId."
+        )
+    }
+}

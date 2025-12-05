@@ -8,4 +8,5 @@ import java.util.UUID
 interface UserRepository : JpaRepository<User, UUID> {
     fun findByEmailIgnoreCase(email: String): User?
     fun existsByEmailIgnoreCase(email: String): Boolean
+    fun findAllByRoleIn(roles: Collection<UserRole>): List<User>
 }

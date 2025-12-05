@@ -11,6 +11,7 @@ import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
 import cl.clinipets.agendamiento.domain.TipoAtencion
 import cl.clinipets.agendamiento.domain.MetodoPago
+import cl.clinipets.core.integration.NotificationService
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
@@ -40,6 +41,7 @@ class ReservaService(
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val mascotaRepository: MascotaRepository,
     private val pagoService: PagoService,
+    private val notificationService: NotificationService,
     private val inventarioService: InventarioService,
     private val clinicZoneId: ZoneId
 ) {
@@ -218,6 +220,7 @@ class ReservaService(
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
+            notificarStaffCita(guardada, "Nueva reserva", "Se creó una reserva en estado ${guardada.estado}")
             return ReservaResult(guardada, paymentUrl)
         } else {
             // Caso de productos sin duración (Venta directa o retiro)
@@ -253,6 +256,7 @@ class ReservaService(
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
+            notificarStaffCita(guardada, "Nueva reserva", "Se creó una reserva en estado ${guardada.estado}")
             return ReservaResult(guardada, paymentUrl)
         }
     }
@@ -268,6 +272,7 @@ class ReservaService(
         cita.estado = EstadoCita.CONFIRMADA
         val saved = citaRepository.save(cita)
         logger.info("[CONFIRMAR_RESERVA] Cita confirmada exitosamente")
+        notificarConfirmacion(saved)
         return saved
     }
 
@@ -292,6 +297,7 @@ class ReservaService(
         cita.estado = EstadoCita.CANCELADA
         val saved = citaRepository.save(cita)
         logger.info("[CANCELAR_RESERVA] Cita cancelada exitosamente")
+        notificarStaffCita(saved, "Reserva cancelada", "El tutor canceló la reserva")
         return saved
     }
 
@@ -319,8 +325,9 @@ class ReservaService(
             if (estadoPago.estado == EstadoPagoMP.APROBADO) {
                 cita.estado = EstadoCita.CONFIRMADA
                 cita.mpPaymentId = estadoPago.paymentId
-                citaRepository.save(cita)
+                val saved = citaRepository.save(cita)
                 logger.info("Auto-healing listado: Cita {} confirmada", cita.id)
+                notificarConfirmacion(saved)
             }
         }
 
@@ -395,6 +402,7 @@ class ReservaService(
             cita.estado = EstadoCita.POR_PAGAR
             
             citaRepository.save(cita)
+            notificarStaffCita(cita, "Saldo pendiente", "Se generó link de pago por $saldoPendiente para el saldo pendiente")
             return cita
         }
 
@@ -405,6 +413,7 @@ class ReservaService(
         
         val saved = citaRepository.save(cita)
         logger.info("[FINALIZAR_CITA] Cita finalizada correctamente. Saldo pendiente virtualmente en 0.")
+        notificarStaffCita(saved, "Cita finalizada", "Estado actualizado a ${saved.estado} por ${metodoPago ?: "N/A"}")
         return saved
     }
 
@@ -447,6 +456,7 @@ class ReservaService(
         val saved = citaRepository.save(cita)
         saved.detalles.size // Forzar carga de detalles
         logger.info("[CANCELAR_STAFF] Cita cancelada correctamente")
+        notificarStaffCita(saved, "Reserva cancelada", "Cancelación realizada por el staff")
         return saved
     }
 
@@ -501,6 +511,33 @@ class ReservaService(
         cita.mpPaymentId = estadoPago.paymentId
         val saved = citaRepository.save(cita)
         logger.info("Auto-healing: Cita {} confirmada al consultar estado", cita.id)
+        notificarConfirmacion(saved)
         return saved
+    }
+
+    private fun notificarConfirmacion(cita: Cita) {
+        val servicioNombre = cita.detalles.firstOrNull()?.servicio?.nombre ?: "tu reserva"
+        notificationService.enviarNotificacion(
+            cita.tutorId,
+            "¡Reserva Confirmada!",
+            "Tu cita para $servicioNombre está lista."
+        )
+        notificarStaffCita(cita, "Pago confirmado", "La reserva quedó en estado ${cita.estado}")
+    }
+
+    private fun notificarStaffCita(cita: Cita, titulo: String, detalle: String) {
+        val resumen = resumenCita(cita)
+        val citaId = cita.id ?: "sin-id"
+        notificationService.enviarNotificacionAStaff(
+            titulo,
+            "Cita $citaId: $detalle ($resumen)."
+        )
+    }
+
+    private fun resumenCita(cita: Cita): String {
+        val fechaLocal = cita.fechaHoraInicio.atZone(clinicZoneId)
+        val hora = fechaLocal.toLocalTime().truncatedTo(ChronoUnit.MINUTES)
+        val servicioNombre = cita.detalles.firstOrNull()?.servicio?.nombre ?: "cita"
+        return "$servicioNombre el ${fechaLocal.toLocalDate()} a las $hora"
     }
 }
