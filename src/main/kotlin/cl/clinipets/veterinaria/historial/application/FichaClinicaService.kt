@@ -1,5 +1,7 @@
 package cl.clinipets.veterinaria.historial.application
 
+import cl.clinipets.agendamiento.domain.CitaRepository
+import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.historial.api.FichaCreateRequest
@@ -15,7 +17,8 @@ import java.util.UUID
 @Service
 class FichaClinicaService(
     private val fichaRepository: FichaClinicaRepository,
-    private val mascotaRepository: MascotaRepository
+    private val mascotaRepository: MascotaRepository,
+    private val citaRepository: CitaRepository
 ) {
     private val logger = LoggerFactory.getLogger(FichaClinicaService::class.java)
 
@@ -27,9 +30,13 @@ class FichaClinicaService(
 
         // Actualizar peso si viene registrado
         if (request.pesoRegistrado != null) {
-            logger.info("[FICHA_SERVICE] Actualizando peso mascota: {} -> {}", mascota.pesoActual, request.pesoRegistrado)
-            mascota.pesoActual = java.math.BigDecimal.valueOf(request.pesoRegistrado)
+            val nuevoPeso = java.math.BigDecimal.valueOf(request.pesoRegistrado)
+            logger.info("[FICHA_SERVICE] Actualizando peso mascota: {} -> {}", mascota.pesoActual, nuevoPeso)
+            mascota.pesoActual = nuevoPeso
             mascotaRepository.save(mascota)
+
+            // Recálculo de precio en Cita Activa (si existe)
+            recalcularPrecioCitaActiva(mascota)
         }
 
         val ficha = fichaRepository.save(
@@ -53,6 +60,42 @@ class FichaClinicaService(
         )
         logger.info("[FICHA_SERVICE] Ficha guardada con ID: {}", ficha.id)
         return ficha.toResponse()
+    }
+
+    private fun recalcularPrecioCitaActiva(mascota: cl.clinipets.veterinaria.domain.Mascota) {
+        val citas = citaRepository.findAllByMascotaId(mascota.id!!)
+        
+        val citaActiva = citas.firstOrNull { 
+            it.estado != EstadoCita.CANCELADA && it.estado != EstadoCita.FINALIZADA
+        }
+
+        if (citaActiva != null) {
+            logger.info("[FICHA_SERVICE] Recalculando precios para cita activa: {}", citaActiva.id)
+            var totalCalculado = 0
+            var huboCambios = false
+            
+            citaActiva.detalles.forEach { detalle ->
+                var precio = detalle.precioUnitario
+                val servicio = detalle.servicio
+                
+                if (servicio.requierePeso && detalle.mascota?.id == mascota.id) {
+                    val nuevoPrecio = servicio.calcularPrecioPara(mascota)
+                    if (nuevoPrecio != precio) {
+                        logger.info("   -> Servicio {}: Precio cambia de {} a {}", servicio.nombre, precio, nuevoPrecio)
+                        detalle.precioUnitario = nuevoPrecio
+                        precio = nuevoPrecio
+                        huboCambios = true
+                    }
+                }
+                totalCalculado += precio
+            }
+
+            if (huboCambios) {
+                logger.info("[FICHA_SERVICE] Nuevo Total Cita: {} (Antes: {})", totalCalculado, citaActiva.precioFinal)
+                citaActiva.precioFinal = totalCalculado
+                citaRepository.save(citaActiva)
+            }
+        }
     }
 
     @Transactional(readOnly = true)

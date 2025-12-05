@@ -2,6 +2,7 @@ package cl.clinipets.agendamiento.application
 
 import cl.clinipets.agendamiento.api.CitaDetalladaResponse
 import cl.clinipets.agendamiento.api.DetalleReservaRequest
+import cl.clinipets.agendamiento.api.ResumenDiarioResponse
 import cl.clinipets.agendamiento.api.toDetalladaResponse
 import cl.clinipets.agendamiento.domain.Cita
 import cl.clinipets.agendamiento.domain.CitaRepository
@@ -42,6 +43,42 @@ class ReservaService(
     private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(ReservaService::class.java)
+
+    @Transactional(readOnly = true)
+    fun obtenerResumenDiario(fecha: LocalDate): ResumenDiarioResponse {
+        logger.info("[RESUMEN_DIARIO] Request. Fecha: $fecha")
+        val startOfDay = fecha.atStartOfDay(clinicZoneId).toInstant()
+        val endOfDay = fecha.plusDays(1).atStartOfDay(clinicZoneId).toInstant()
+
+        val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(startOfDay, endOfDay)
+        
+        // Filter cancelled out for calculations to avoid noise
+        val citasValidas = citas.filter { it.estado != EstadoCita.CANCELADA }
+
+        val totalCitas = citasValidas.size
+        val citasFinalizadas = citasValidas.count { it.estado == EstadoCita.FINALIZADA }
+        
+        // Recaudación Online: Abonos de todas las citas válidas (pendientes, confirmadas, finalizadas, etc)
+        // Asumimos que el abono se pagó al reservar.
+        val recaudacionOnline = citasValidas.sumOf { it.montoAbono }
+        
+        // Recaudación Mostrador: Saldo restante (Total - Abono) SOLO de las finalizadas (que son las que pagaron el resto)
+        val recaudacionMostrador = citasValidas
+            .filter { it.estado == EstadoCita.FINALIZADA }
+            .sumOf { it.precioFinal - it.montoAbono }
+            
+        val totalGeneral = recaudacionOnline + recaudacionMostrador
+
+        logger.info("[RESUMEN_DIARIO] Total: $totalGeneral (Online: $recaudacionOnline, Mostrador: $recaudacionMostrador)")
+
+        return ResumenDiarioResponse(
+            totalCitas = totalCitas,
+            citasFinalizadas = citasFinalizadas,
+            recaudacionOnline = recaudacionOnline,
+            recaudacionMostrador = recaudacionMostrador,
+            totalGeneral = totalGeneral
+        )
+    }
 
     @Transactional
     fun crearReserva(
@@ -332,6 +369,12 @@ class ReservaService(
 
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
 
+//        // New check
+//        if (cita.fechaHoraInicio.isAfter(Instant.now())) {
+//             logger.warn("[FINALIZAR_CITA] Intento de finalizar cita futura. ID: {}, FechaInicio: {}", id, cita.fechaHoraInicio)
+//             throw BadRequestException("No se puede finalizar una cita que aún no ha comenzado")
+//        }
+
         if (cita.estado == EstadoCita.FINALIZADA || cita.estado == EstadoCita.CANCELADA) {
             logger.warn("[FINALIZAR_CITA] Intento de finalizar cita en estado inválido: {}", cita.estado)
             throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
@@ -389,5 +432,35 @@ class ReservaService(
         val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(startOfDay, endOfDay)
 
         return citas.map { it.toDetalladaResponse(it.paymentUrl) }
+    }
+
+    @Transactional
+    fun cancelarReservasExpiradas() {
+        val expiracion = Instant.now().minus(30, ChronoUnit.MINUTES)
+        logger.info("[CLEANUP] Buscando reservas pendientes creadas antes de {}", expiracion)
+
+        val expiradas = citaRepository.findByEstadoAndCreatedAtBefore(EstadoCita.PENDIENTE_PAGO, expiracion)
+        
+        if (expiradas.isEmpty()) {
+            logger.info("[CLEANUP] No se encontraron reservas expiradas.")
+            return
+        }
+
+        logger.info("[CLEANUP] Encontradas {} reservas expiradas. Procediendo a cancelar...", expiradas.size)
+
+        for (cita in expiradas) {
+            try {
+                logger.info("[CLEANUP] Cancelando cita ID: {} (Creada: {})", cita.id, cita.createdAt)
+                
+                // Replicar lógica de cancelación: Reponer Stock y cambiar estado
+                reponerStock(cita)
+                cita.estado = EstadoCita.CANCELADA
+                citaRepository.save(cita)
+                
+            } catch (e: Exception) {
+                logger.error("[CLEANUP] Error al cancelar cita expirada {}", cita.id, e)
+            }
+        }
+        logger.info("[CLEANUP] Proceso finalizado.")
     }
 }

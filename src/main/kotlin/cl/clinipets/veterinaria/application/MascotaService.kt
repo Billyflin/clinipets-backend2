@@ -14,6 +14,8 @@ import cl.clinipets.identity.domain.UserRole
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.math.BigDecimal
+import java.time.LocalDate
 import java.util.UUID
 
 @Service
@@ -37,8 +39,9 @@ class MascotaService(
                 esterilizado = request.esterilizado,
                 chipIdentificador = request.chipIdentificador,
                 temperamento = request.temperamento,
-                pesoActual = request.pesoActual,
-                fechaNacimiento = request.fechaNacimiento,
+                // Valores por defecto para permitir registro flexible
+                pesoActual = request.pesoActual ?: BigDecimal("-1.0"),
+                fechaNacimiento = request.fechaNacimiento ?: LocalDate.of(1900, 1, 1),
                 tutor = user
             )
         )

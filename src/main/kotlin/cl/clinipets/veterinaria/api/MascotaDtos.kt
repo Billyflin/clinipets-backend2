@@ -23,11 +23,8 @@ data class MascotaCreateRequest(
     val esterilizado: Boolean = false,
     val chipIdentificador: String? = null,
     val temperamento: Temperamento = Temperamento.DOCIL,
-    @field:NotNull(message = "El peso es obligatorio")
-    val pesoActual: BigDecimal,
-    @field:NotNull(message = "La fecha de nacimiento es obligatoria")
-    @field:PastOrPresent(message = "La fecha de nacimiento no puede ser futura")
-    val fechaNacimiento: LocalDate
+    val pesoActual: BigDecimal? = null,
+    val fechaNacimiento: LocalDate? = null
 )
 
 data class MascotaUpdateRequest(

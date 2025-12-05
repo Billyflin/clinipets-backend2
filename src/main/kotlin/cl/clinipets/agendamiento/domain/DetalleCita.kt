@@ -25,5 +25,5 @@ data class DetalleCita(
     val mascota: Mascota?,
 
     @Column(nullable = false)
-    val precioUnitario: Int
+    var precioUnitario: Int
 )

@@ -38,6 +38,14 @@ data class DetalleCitaResponse(
     val precioUnitario: Int
 )
 
+data class ResumenDiarioResponse(
+    val totalCitas: Int,
+    val citasFinalizadas: Int,
+    val recaudacionOnline: Int,
+    val recaudacionMostrador: Int,
+    val totalGeneral: Int
+)
+
 data class CitaResponse(
     val id: UUID,
     val fechaHoraInicio: Instant,

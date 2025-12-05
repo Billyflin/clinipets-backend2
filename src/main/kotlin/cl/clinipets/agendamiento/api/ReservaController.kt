@@ -20,6 +20,17 @@ class ReservaController(
 ) {
     private val logger = LoggerFactory.getLogger(ReservaController::class.java)
 
+    @Operation(summary = "Obtener resumen financiero diario (Staff/Admin)", operationId = "obtenerResumenDiario")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @GetMapping("/admin/resumen")
+    fun obtenerResumenDiario(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fecha: LocalDate
+    ): ResponseEntity<ResumenDiarioResponse> {
+        logger.info("[RESUMEN_DIARIO] Request. Fecha: {}", fecha)
+        val resumen = reservaService.obtenerResumenDiario(fecha)
+        return ResponseEntity.ok(resumen)
+    }
+
     @Operation(summary = "Crear reserva (Carrito)", operationId = "crearReserva")
     @PostMapping
     fun crear(

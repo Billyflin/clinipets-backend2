@@ -23,7 +23,7 @@ data class Cita(
     var estado: EstadoCita,
 
     @Column(nullable = false)
-    val precioFinal: Int,
+    var precioFinal: Int,
 
     @OneToMany(mappedBy = "cita", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     val detalles: MutableList<DetalleCita> = mutableListOf(),
