@@ -102,7 +102,11 @@ fun Cita.toDetalladaResponse(paymentUrl: String? = null) = CitaDetalladaResponse
     estado = estado,
     precioFinal = precioFinal,
     montoAbono = montoAbono,
-    saldoPendiente = if (estado == EstadoCita.FINALIZADA) 0 else (precioFinal - montoAbono),
+    saldoPendiente = when (estado) {
+        EstadoCita.PENDIENTE_PAGO -> precioFinal
+        EstadoCita.FINALIZADA, EstadoCita.CANCELADA -> 0
+        else -> precioFinal - montoAbono
+    },
     detalles = detalles.map { it.toResponse() },
     tutorId = tutorId,
     origen = origen,

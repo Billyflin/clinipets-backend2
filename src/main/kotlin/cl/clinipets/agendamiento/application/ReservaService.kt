@@ -422,15 +422,20 @@ class ReservaService(
 
         // 2. Reembolso si aplica
         if (cita.mpPaymentId != null) {
-            logger.info("[CANCELAR_STAFF] Procesando reembolso para PaymentID: {}", cita.mpPaymentId)
-            val reembolsoExitoso = pagoService.reembolsar(cita.mpPaymentId!!)
-            if (!reembolsoExitoso) {
-                logger.error("[CANCELAR_STAFF] Error en reembolso MP para cita {}", citaId)
-                throw Exception("Error al procesar el reembolso en Mercado Pago para la cita ${cita.id}. Por favor, revisa manualmente.")
+            try {
+                logger.info("[CANCELAR_STAFF] Procesando reembolso para PaymentID: {}", cita.mpPaymentId)
+                val reembolsoExitoso = pagoService.reembolsar(cita.mpPaymentId!!)
+                if (reembolsoExitoso) {
+                    logger.info("[CANCELAR_STAFF] Reembolso para cita {} procesado exitosamente.", cita.id)
+                    // 3. Generar cupón de compensación
+                    cita.tokenCompensacion = "DISCULPA-${UUID.randomUUID().toString().substring(0, 8).uppercase()}"
+                    logger.info("[CANCELAR_STAFF] Cupón generado: {}", cita.tokenCompensacion)
+                } else {
+                    logger.error("[CANCELAR_STAFF] El servicio de pago devolvió 'false' para el reembolso de la cita {}. Requiere revisión manual.", citaId)
+                }
+            } catch (e: Exception) {
+                logger.error("[CANCELAR_STAFF] Fallo reembolso automático para cita ID {}, requiere revisión manual.", citaId, e)
             }
-            // 3. Generar cupón de compensación
-            cita.tokenCompensacion = "DISCULPA-${UUID.randomUUID().toString().substring(0, 8).uppercase()}"
-            logger.info("[CANCELAR_STAFF] Cupón generado: {}", cita.tokenCompensacion)
         }
 
         // 4. Devolver stock
@@ -441,6 +446,7 @@ class ReservaService(
 
         // 6. Guardar y retornar
         val saved = citaRepository.save(cita)
+        saved.detalles.size // Forzar carga de detalles
         logger.info("[CANCELAR_STAFF] Cita cancelada correctamente")
         return saved
     }
