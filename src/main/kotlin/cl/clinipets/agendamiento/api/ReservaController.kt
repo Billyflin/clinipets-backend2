@@ -1,6 +1,7 @@
 package cl.clinipets.agendamiento.api
 
 import cl.clinipets.agendamiento.application.ReservaService
+import cl.clinipets.agendamiento.domain.MetodoPago
 import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.validation.Valid
@@ -12,6 +13,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
 import java.time.LocalDate
 import java.util.UUID
+
+data class FinalizarCitaRequest(
+    val metodoPago: MetodoPago? = null
+)
 
 @RestController
 @RequestMapping("/api/v1/reservas")
@@ -44,7 +49,8 @@ class ReservaController(
             origen = request.origen,
             tutor = principal,
             tipoAtencion = request.tipoAtencion,
-            direccion = request.direccion
+            direccion = request.direccion,
+            pagoTotal = request.pagoTotal
         )
         logger.info("[CREAR_RESERVA] Fin request - Exitoso. ID Cita: {}", result.cita.id)
         return ResponseEntity.ok(result.cita.toResponse(result.paymentUrl))
@@ -114,10 +120,12 @@ class ReservaController(
     @PostMapping("/{id}/finalizar")
     fun finalizar(
         @PathVariable id: UUID,
+        @RequestBody(required = false) request: FinalizarCitaRequest?,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
-        logger.info("[FINALIZAR_CITA] Request. ID: {}, User: {}", id, principal.email)
-        val cita = reservaService.finalizarCita(id, principal)
+        val metodoPago = request?.metodoPago
+        logger.info("[FINALIZAR_CITA] Request. ID: {}, User: {}, Metodo: {}", id, principal.email, metodoPago)
+        val cita = reservaService.finalizarCita(id, metodoPago, principal)
         logger.info("[FINALIZAR_CITA] Fin request - Exitoso")
         return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
     }

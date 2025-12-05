@@ -21,7 +21,8 @@ class DataSeeder(
 
         val consulta = ServicioMedico(
             nombre = "Consulta General",
-            precioBase = 8000,
+            precioBase = 15000,
+            precioAbono = 3000,
             requierePeso = false,
             duracionMinutos = 30,
             activo = true,
@@ -31,7 +32,8 @@ class DataSeeder(
 
         val esterilizacion = ServicioMedico(
             nombre = "Esterilización Canina",
-            precioBase = 30000, // base mínima
+            precioBase = 45000, // base mínima
+            precioAbono = 5000,
             requierePeso = true,
             duracionMinutos = 60,
             activo = true,
@@ -42,25 +44,25 @@ class DataSeeder(
             ReglaPrecio(
                 pesoMin = BigDecimal("0.0"),
                 pesoMax = BigDecimal("10.0"),
-                precio = 30000,
+                precio = 45000,
                 servicio = esterilizacion
             ),
             ReglaPrecio(
                 pesoMin = BigDecimal("10.0"),
                 pesoMax = BigDecimal("15.0"),
-                precio = 34000,
+                precio = 50000,
                 servicio = esterilizacion
             ),
             ReglaPrecio(
                 pesoMin = BigDecimal("15.0"),
                 pesoMax = BigDecimal("20.0"),
-                precio = 38000,
+                precio = 55000,
                 servicio = esterilizacion
             ),
             ReglaPrecio(
                 pesoMin = BigDecimal("20.0"),
                 pesoMax = BigDecimal("30.0"),
-                precio = 45000,
+                precio = 65000,
                 servicio = esterilizacion
             )
         )
@@ -69,6 +71,7 @@ class DataSeeder(
         val vacunas = ServicioMedico(
             nombre = "Vacunas",
             precioBase = 12000,
+            precioAbono = 2000,
             requierePeso = false,
             duracionMinutos = 15,
             activo = true,
@@ -88,6 +91,17 @@ class DataSeeder(
             stock = 50
         )
 
-        servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas, churu))
+        val servicioTest = ServicioMedico(
+            nombre = "Test Flujo Pagos",
+            precioBase = 2,
+            precioAbono = 1,
+            requierePeso = false,
+            duracionMinutos = 15,
+            activo = true,
+            categoria = CategoriaServicio.OTRO,
+            especiesPermitidas = mutableSetOf() // Todas
+        )
+
+        servicioMedicoRepository.saveAll(listOf(consulta, esterilizacion, vacunas, churu, servicioTest))
     }
 }

@@ -26,7 +26,8 @@ data class ReservaCreateRequest(
     @field:NotNull
     val origen: OrigenCita,
     val tipoAtencion: TipoAtencion = TipoAtencion.CLINICA,
-    val direccion: String? = null
+    val direccion: String? = null,
+    val pagoTotal: Boolean = false
 )
 
 data class DetalleCitaResponse(

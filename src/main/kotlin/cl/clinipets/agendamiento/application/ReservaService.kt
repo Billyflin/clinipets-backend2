@@ -10,6 +10,7 @@ import cl.clinipets.agendamiento.domain.DetalleCita
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
 import cl.clinipets.agendamiento.domain.TipoAtencion
+import cl.clinipets.agendamiento.domain.MetodoPago
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
@@ -87,9 +88,10 @@ class ReservaService(
         origen: OrigenCita,
         tutor: JwtPayload,
         tipoAtencion: TipoAtencion = TipoAtencion.CLINICA,
-        direccion: String? = null
+        direccion: String? = null,
+        pagoTotal: Boolean = false
     ): ReservaResult {
-        logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Items: ${detallesRequest.size}, FechaSolicitada(UTC/Raw): $fechaHoraInicio")
+        logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Items: ${detallesRequest.size}, Fecha: $fechaHoraInicio, PagoTotal: $pagoTotal")
 
         if (detallesRequest.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio o producto")
         if (tipoAtencion == TipoAtencion.DOMICILIO && direccion.isNullOrBlank()) {
@@ -97,7 +99,7 @@ class ReservaService(
         }
 
         var totalPrecio = 0
-        var totalAbono = 0
+        val abonos = mutableListOf<Int>()
         var duracionTotalMinutos = 0L
 
         // We need a temporary object to hold the data before creating DetalleCita with the Cita reference
@@ -144,17 +146,21 @@ class ReservaService(
                 duracionTotalMinutos += servicio.duracionMinutos
             }
 
-            // Abono logic: use specific deposit price if set, otherwise full price
-            val abonoItem = servicio.precioAbono ?: precioItem
+            // Abono logic: Collect deposits. If null (e.g. products), use 0.
+            val abonoItem = servicio.precioAbono ?: 0
+            abonos.add(abonoItem)
             
             logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: $precioItem | Abono: $abonoItem")
 
             totalPrecio += precioItem
-            totalAbono += abonoItem
             tempList.add(TempDetalle(servicio, mascota, precioItem))
         }
 
-        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Duración Total: $duracionTotalMinutos min. Precio Total: $totalPrecio. Abono Total: $totalAbono")
+        // Calculate final deposit
+        val abonoMinimo = abonos.maxOrNull() ?: 0
+        val montoAbonoFinal = if (pagoTotal) totalPrecio else abonoMinimo
+
+        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Total: $totalPrecio. AbonoMin: $abonoMinimo. A Cobrar: $montoAbonoFinal")
 
         // Validate Availability for the total duration
         if (duracionTotalMinutos > 0) {
@@ -183,7 +189,7 @@ class ReservaService(
                 fechaHoraFin = fechaHoraFin,
                 estado = EstadoCita.PENDIENTE_PAGO,
                 precioFinal = totalPrecio,
-                montoAbono = totalAbono,
+                montoAbono = montoAbonoFinal,
                 tutorId = tutor.userId,
                 origen = origen,
                 tipoAtencion = tipoAtencion,
@@ -205,9 +211,10 @@ class ReservaService(
             val guardada = citaRepository.save(cita)
             logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
 
+            val tipoCobro = if (pagoTotal) "Pago Total" else "Reserva"
             val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Reserva Clínica (Abono) - ${tempList.size} items",
-                precio = guardada.montoAbono, // Charge ONLY the deposit amount
+                titulo = "Clinipets ($tipoCobro) - ${tempList.size} items",
+                precio = guardada.montoAbono,
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
@@ -221,7 +228,7 @@ class ReservaService(
                 fechaHoraFin = fechaHoraInicio,
                 estado = EstadoCita.PENDIENTE_PAGO,
                 precioFinal = totalPrecio,
-                montoAbono = totalAbono,
+                montoAbono = montoAbonoFinal,
                 tutorId = tutor.userId,
                 origen = origen,
                 tipoAtencion = tipoAtencion,
@@ -238,8 +245,10 @@ class ReservaService(
                 )
             }
             val guardada = citaRepository.save(cita)
+            
+            val tipoCobro = if (pagoTotal) "Pago Total" else "Reserva"
             val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Reserva Clínica (Abono) - ${tempList.size} items",
+                titulo = "Clinipets ($tipoCobro) - ${tempList.size} items",
                 precio = guardada.montoAbono,
                 externalReference = guardada.id!!.toString()
             )
@@ -358,8 +367,8 @@ class ReservaService(
     }
 
     @Transactional
-    fun finalizarCita(id: UUID, staff: JwtPayload): Cita {
-        logger.info("[FINALIZAR_CITA] Request. CitaID: {}, Staff: {}", id, staff.email)
+    fun finalizarCita(id: UUID, metodoPago: MetodoPago?, staff: JwtPayload): Cita {
+        logger.info("[FINALIZAR_CITA] Request. CitaID: {}, Staff: {}, Metodo: {}", id, staff.email, metodoPago)
         
         // Validate permissions
         if (staff.role != UserRole.STAFF && staff.role != UserRole.ADMIN) {
@@ -369,18 +378,30 @@ class ReservaService(
 
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
 
-//        // New check
-//        if (cita.fechaHoraInicio.isAfter(Instant.now())) {
-//             logger.warn("[FINALIZAR_CITA] Intento de finalizar cita futura. ID: {}, FechaInicio: {}", id, cita.fechaHoraInicio)
-//             throw BadRequestException("No se puede finalizar una cita que aún no ha comenzado")
-//        }
-
         if (cita.estado == EstadoCita.FINALIZADA || cita.estado == EstadoCita.CANCELADA) {
             logger.warn("[FINALIZAR_CITA] Intento de finalizar cita en estado inválido: {}", cita.estado)
             throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
         }
 
-        // Mark as FINALIZED. Logic assumes full payment at counter.
+        val saldoPendiente = cita.precioFinal - cita.montoAbono
+
+        if (saldoPendiente > 0 && metodoPago == MetodoPago.MERCADO_PAGO_LINK) {
+            logger.info("[FINALIZAR_CITA] Generando link de pago para saldo pendiente: {}", saldoPendiente)
+            val paymentUrl = pagoService.crearPreferencia(
+                titulo = "Clinipets (Saldo Pendiente) - Cita ${cita.id}",
+                precio = saldoPendiente,
+                externalReference = "SALDO-${cita.id}"
+            )
+            cita.paymentUrl = paymentUrl
+            cita.estado = EstadoCita.POR_PAGAR
+            
+            citaRepository.save(cita)
+            return cita
+        }
+
+        // For other methods or if balance is 0, finalize immediately
+        cita.metodoPagoSaldo = metodoPago
+        cita.staffFinalizadorId = staff.userId
         cita.estado = EstadoCita.FINALIZADA
         
         val saved = citaRepository.save(cita)

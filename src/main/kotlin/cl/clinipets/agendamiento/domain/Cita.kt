@@ -5,6 +5,13 @@ import jakarta.persistence.*
 import java.time.Instant
 import java.util.UUID
 
+enum class MetodoPago {
+    EFECTIVO,
+    TRANSFERENCIA,
+    TARJETA_POS,
+    MERCADO_PAGO_LINK
+}
+
 @Entity
 @Table(name = "citas")
 data class Cita(
@@ -52,5 +59,12 @@ data class Cita(
     var mpPaymentId: Long? = null,
 
     @Column(length = 50)
-    var tokenCompensacion: String? = null
+    var tokenCompensacion: String? = null,
+
+    @Enumerated(EnumType.STRING)
+    @Column(length = 20)
+    var metodoPagoSaldo: MetodoPago? = null,
+
+    @Column
+    var staffFinalizadorId: UUID? = null
 ) : AuditableEntity()
