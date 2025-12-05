@@ -5,3 +5,4 @@ import org.springframework.web.bind.annotation.ResponseStatus
 
 @ResponseStatus(HttpStatus.CONFLICT)
 class ConflictException(message: String) : RuntimeException(message)
+

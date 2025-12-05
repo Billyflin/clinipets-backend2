@@ -4,6 +4,7 @@ import cl.clinipets.core.web.ConflictException
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import org.slf4j.LoggerFactory
+import org.springframework.orm.ObjectOptimisticLockingFailureException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 
@@ -24,7 +25,12 @@ class InventarioService(
         }
         
         servicio.stock = servicio.stock!! - cantidad
-        servicioMedicoRepository.save(servicio)
+        try {
+            servicioMedicoRepository.save(servicio)
+        } catch (ex: ObjectOptimisticLockingFailureException) {
+            logger.warn("[INVENTARIO_CONCURRENCIA] Falló la actualización de stock para {}. Se reintentará.", servicio.nombre)
+            throw ConflictException("El stock ha cambiado mientras realizabas la operación, por favor intenta nuevamente")
+        }
         logger.info("[INVENTARIO] Stock actualizado. Servicio: {}, NuevoStock: {}", servicio.nombre, servicio.stock)
     }
 
@@ -34,7 +40,12 @@ class InventarioService(
 
         logger.debug("[INVENTARIO] Devolviendo stock. Servicio: {}, Cantidad: {}, StockActual: {}", servicio.nombre, cantidad, servicio.stock)
         servicio.stock = servicio.stock!! + cantidad
-        servicioMedicoRepository.save(servicio)
+        try {
+            servicioMedicoRepository.save(servicio)
+        } catch (ex: ObjectOptimisticLockingFailureException) {
+            logger.warn("[INVENTARIO_CONCURRENCIA] Falló la devolución de stock para {}.", servicio.nombre)
+            // En la devolución no lanzamos excepción al usuario, solo logueamos. Se puede reintentar internamente si es crítico.
+        }
         logger.info("[INVENTARIO] Stock devuelto. Servicio: {}, NuevoStock: {}", servicio.nombre, servicio.stock)
     }
 }

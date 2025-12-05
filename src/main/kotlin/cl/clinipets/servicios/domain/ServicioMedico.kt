@@ -13,6 +13,9 @@ data class ServicioMedico(
     @GeneratedValue(strategy = GenerationType.UUID)
     val id: UUID? = null,
 
+    @Version
+    val version: Long? = null,
+
     @Column(nullable = false, unique = true)
     val nombre: String,
 

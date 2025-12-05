@@ -16,6 +16,7 @@ interface PagoService {
     fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String
     fun consultarEstadoPago(externalReference: String): EstadoPagoResult
     fun reembolsar(paymentId: Long): Boolean
+    fun getPaymentDetails(paymentId: Long): com.mercadopago.resources.payment.Payment?
 }
 
 data class EstadoPagoResult(val estado: EstadoPagoMP, val paymentId: Long? = null)
@@ -65,6 +66,16 @@ class MercadoPagoService(
         val preference = client.create(request)
         logger.info("Preferencia MP creada. InitPoint: {}", preference.initPoint)
         return preference.initPoint
+    }
+
+    override fun getPaymentDetails(paymentId: Long): com.mercadopago.resources.payment.Payment? {
+        logger.info("Consultando detalles de pago en MP para Payment ID: {}", paymentId)
+        return try {
+            PaymentClient().get(paymentId)
+        } catch (e: Exception) {
+            logger.error("Error al consultar Payment ID {} en Mercado Pago", paymentId, e)
+            null
+        }
     }
 
     override fun consultarEstadoPago(externalReference: String): EstadoPagoResult {

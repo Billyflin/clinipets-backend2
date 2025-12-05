@@ -309,24 +309,6 @@ class ReservaService(
     fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
         val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
 
-        // Auto-healing: sincronizar estados de pago pendientes con Mercado Pago
-        citas
-            .filter { it.estado == EstadoCita.PENDIENTE_PAGO && it.id != null }
-            .forEach { cita ->
-                try {
-                    val resultadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
-                    if (resultadoPago.estado == EstadoPagoMP.APROBADO) {
-                        logger.info("[Auto-Healing] Cita ${cita.id} encontrada como PENDIENTE, pero APROBADA en MP. Actualizando a CONFIRMADA.")
-                        cita.estado = EstadoCita.CONFIRMADA
-                        cita.mpPaymentId = resultadoPago.paymentId
-                        citaRepository.save(cita)
-                    }
-                } catch (ex: Exception) {
-                    // No rompemos listar por problemas con MP; solo logueamos
-                    logger.error("[AUTO_HEALING] Error consultando estado de pago para cita {}", cita.id, ex)
-                }
-            }
-
         return citas.map { it.toDetalladaResponse(it.paymentUrl) }
     }
 
