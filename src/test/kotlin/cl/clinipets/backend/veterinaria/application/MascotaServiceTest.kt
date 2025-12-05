@@ -3,6 +3,7 @@ package cl.clinipets.backend.veterinaria.application
 import cl.clinipets.veterinaria.api.MascotaCreateRequest
 import cl.clinipets.veterinaria.domain.Especie
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.domain.Sexo
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
@@ -79,6 +80,8 @@ class MascotaServiceTest(
             MascotaCreateRequest(
                 nombre = "Firulais",
                 especie = Especie.PERRO,
+                raza = "Mestizo",
+                sexo = Sexo.MACHO,
                 pesoActual = BigDecimal("8.5"),
                 fechaNacimiento = LocalDate.of(2022, 5, 10)
             ),
@@ -98,6 +101,8 @@ class MascotaServiceTest(
             MascotaCreateRequest(
                 nombre = "Michi",
                 especie = Especie.GATO,
+                raza = "Mestizo",
+                sexo = Sexo.HEMBRA,
                 pesoActual = BigDecimal("4.2"),
                 fechaNacimiento = LocalDate.of(2023, 3, 15)
             ),

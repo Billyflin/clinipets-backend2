@@ -23,6 +23,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.UUID
@@ -195,19 +196,30 @@ class ReservaService(
 
     @Transactional
     fun confirmar(id: UUID, tutor: JwtPayload): Cita {
+        logger.info("[CONFIRMAR_RESERVA] Request para CitaID: {}", id)
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
-        if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes confirmar esta cita")
+        if (cita.tutorId != tutor.userId) {
+            logger.warn("[CONFIRMAR_RESERVA] Usuario {} intentó confirmar cita ajena {}", tutor.email, id)
+            throw UnauthorizedException("No puedes confirmar esta cita")
+        }
         cita.estado = EstadoCita.CONFIRMADA
-        return citaRepository.save(cita)
+        val saved = citaRepository.save(cita)
+        logger.info("[CONFIRMAR_RESERVA] Cita confirmada exitosamente")
+        return saved
     }
 
     @Transactional
     fun cancelar(id: UUID, tutor: JwtPayload): Cita {
+        logger.info("[CANCELAR_RESERVA] Request para CitaID: {}", id)
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
-        if (cita.tutorId != tutor.userId) throw UnauthorizedException("No puedes cancelar esta cita")
+        if (cita.tutorId != tutor.userId) {
+            logger.warn("[CANCELAR_RESERVA] Usuario {} intentó cancelar cita ajena {}", tutor.email, id)
+            throw UnauthorizedException("No puedes cancelar esta cita")
+        }
 
         // Solo permitimos cancelar citas que no estén ya canceladas o completadas
         if (cita.estado == EstadoCita.CANCELADA) {
+            logger.warn("[CANCELAR_RESERVA] Cita {} ya estaba cancelada", id)
             throw BadRequestException("La cita ya está cancelada")
         }
 
@@ -215,13 +227,16 @@ class ReservaService(
         reponerStock(cita)
 
         cita.estado = EstadoCita.CANCELADA
-        return citaRepository.save(cita)
+        val saved = citaRepository.save(cita)
+        logger.info("[CANCELAR_RESERVA] Cita cancelada exitosamente")
+        return saved
     }
 
     private fun reponerStock(cita: Cita) {
         cita.detalles.forEach { detalle ->
             val servicio = detalle.servicio
             if (servicio.categoria == CategoriaServicio.PRODUCTO) {
+                logger.info("[STOCK] Reponiendo stock para producto: {}", servicio.nombre)
                 inventarioService.devolverStock(servicio)
             }
         }
@@ -254,21 +269,26 @@ class ReservaService(
 
     @Transactional
     fun cancelarPorStaff(citaId: UUID, staff: JwtPayload): Cita {
+        logger.info("[CANCELAR_STAFF] Iniciando cancelación administrativa. CitaID: {}, Staff: {}", citaId, staff.email)
         val cita = citaRepository.findById(citaId).orElseThrow { NotFoundException("Cita no encontrada") }
 
         // 1. Validar rol
         if (staff.role != UserRole.STAFF && staff.role != UserRole.ADMIN) {
+            logger.warn("[CANCELAR_STAFF] Usuario {} sin permisos de Staff", staff.email)
             throw UnauthorizedException("No tienes permisos para realizar esta acción")
         }
 
         // 2. Reembolso si aplica
         if (cita.mpPaymentId != null) {
+            logger.info("[CANCELAR_STAFF] Procesando reembolso para PaymentID: {}", cita.mpPaymentId)
             val reembolsoExitoso = pagoService.reembolsar(cita.mpPaymentId!!)
             if (!reembolsoExitoso) {
+                logger.error("[CANCELAR_STAFF] Error en reembolso MP para cita {}", citaId)
                 throw Exception("Error al procesar el reembolso en Mercado Pago para la cita ${cita.id}. Por favor, revisa manualmente.")
             }
             // 3. Generar cupón de compensación
             cita.tokenCompensacion = "DISCULPA-${UUID.randomUUID().toString().substring(0, 8).uppercase()}"
+            logger.info("[CANCELAR_STAFF] Cupón generado: {}", cita.tokenCompensacion)
         }
 
         // 4. Devolver stock
@@ -278,6 +298,18 @@ class ReservaService(
         cita.estado = EstadoCita.CANCELADA
 
         // 6. Guardar y retornar
-        return citaRepository.save(cita)
+        val saved = citaRepository.save(cita)
+        logger.info("[CANCELAR_STAFF] Cita cancelada correctamente")
+        return saved
+    }
+
+    @Transactional(readOnly = true)
+    fun obtenerAgendaDiaria(fecha: LocalDate): List<CitaDetalladaResponse> {
+        val startOfDay = fecha.atStartOfDay(clinicZoneId).toInstant()
+        val endOfDay = fecha.plusDays(1).atStartOfDay(clinicZoneId).toInstant()
+
+        val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(startOfDay, endOfDay)
+
+        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
     }
 }

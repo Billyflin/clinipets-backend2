@@ -13,4 +13,6 @@ interface CitaRepository : JpaRepository<Cita, UUID> {
     ): List<Cita>
 
     fun findAllByTutorIdOrderByFechaHoraInicioDesc(tutorId: UUID): List<Cita>
+
+    fun findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(start: Instant, end: Instant): List<Cita>
 }

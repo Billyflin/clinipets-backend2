@@ -7,6 +7,7 @@ import cl.clinipets.veterinaria.historial.api.FichaResponse
 import cl.clinipets.veterinaria.historial.api.toResponse
 import cl.clinipets.veterinaria.historial.domain.FichaClinica
 import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -16,9 +17,11 @@ class FichaClinicaService(
     private val fichaRepository: FichaClinicaRepository,
     private val mascotaRepository: MascotaRepository
 ) {
+    private val logger = LoggerFactory.getLogger(FichaClinicaService::class.java)
 
     @Transactional
     fun crearFicha(request: FichaCreateRequest, autorId: UUID): FichaResponse {
+        logger.debug("[FICHA_SERVICE] Creando ficha para mascota {}", request.mascotaId)
         val mascota = mascotaRepository.findById(request.mascotaId)
             .orElseThrow { NotFoundException("Mascota no encontrada con ID: ${request.mascotaId}") }
 
@@ -35,6 +38,7 @@ class FichaClinicaService(
                 autorId = autorId
             )
         )
+        logger.info("[FICHA_SERVICE] Ficha guardada con ID: {}", ficha.id)
         return ficha.toResponse()
     }
 
@@ -42,6 +46,7 @@ class FichaClinicaService(
     fun obtenerHistorial(mascotaId: UUID): List<FichaResponse> {
         // Verificamos que la mascota exista
         if (!mascotaRepository.existsById(mascotaId)) {
+            logger.warn("[FICHA_SERVICE] Intento de obtener historial de mascota inexistente: {}", mascotaId)
             throw NotFoundException("Mascota no encontrada con ID: $mascotaId")
         }
         return fichaRepository.findAllByMascotaIdOrderByFechaAtencionDesc(mascotaId)

@@ -1,10 +1,13 @@
 package cl.clinipets.maestros.application
 
 import cl.clinipets.veterinaria.domain.Especie
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 
 @Service
 class RazasService {
+    private val logger = LoggerFactory.getLogger(RazasService::class.java)
+
     private val razasPerro = listOf(
         "Mestizo",
         "Labrador Retriever",
@@ -34,6 +37,7 @@ class RazasService {
     ).sorted()
 
     fun getRazas(especie: Especie?): List<String> {
+        logger.debug("[RAZAS_SERVICE] Obteniendo razas para especie: {}", especie ?: "TODAS")
         return when (especie) {
             Especie.PERRO -> razasPerro
             Especie.GATO -> razasGato

@@ -4,10 +4,13 @@ import cl.clinipets.agendamiento.application.ReservaService
 import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.validation.Valid
+import org.slf4j.LoggerFactory
+import org.springframework.format.annotation.DateTimeFormat
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
+import java.time.LocalDate
 import java.util.UUID
 
 @RestController
@@ -15,18 +18,22 @@ import java.util.UUID
 class ReservaController(
     private val reservaService: ReservaService
 ) {
+    private val logger = LoggerFactory.getLogger(ReservaController::class.java)
+
     @Operation(summary = "Crear reserva (Carrito)", operationId = "crearReserva")
     @PostMapping
     fun crear(
         @Valid @RequestBody request: ReservaCreateRequest,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
+        logger.info("[CREAR_RESERVA] Request recibida. Tutor: {}", principal.email)
         val result = reservaService.crearReserva(
             detallesRequest = request.detalles,
             fechaHoraInicio = request.fechaHoraInicio,
             origen = request.origen,
             tutor = principal
         )
+        logger.info("[CREAR_RESERVA] Fin request - Exitoso. ID Cita: {}", result.cita.id)
         return ResponseEntity.ok(result.cita.toResponse(result.paymentUrl))
     }
 
@@ -36,7 +43,9 @@ class ReservaController(
         @PathVariable id: UUID,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
+        logger.info("[CONFIRMAR_RESERVA] Request. ID: {}", id)
         val cita = reservaService.confirmar(id, principal)
+        logger.info("[CONFIRMAR_RESERVA] Fin request - Exitoso")
         return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
     }
 
@@ -46,7 +55,9 @@ class ReservaController(
         @PathVariable id: UUID,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
+        logger.info("[CANCELAR_RESERVA] Request. ID: {}", id)
         val cita = reservaService.cancelar(id, principal)
+        logger.info("[CANCELAR_RESERVA] Fin request - Exitoso")
         return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
     }
 
@@ -55,7 +66,10 @@ class ReservaController(
     fun listar(
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<List<CitaDetalladaResponse>> {
-        return ResponseEntity.ok(reservaService.listar(principal))
+        logger.info("[LISTAR_RESERVAS] Request. Tutor: {}", principal.email)
+        val response = reservaService.listar(principal)
+        logger.info("[LISTAR_RESERVAS] Fin request - Encontradas: {}", response.size)
+        return ResponseEntity.ok(response)
     }
 
     @Operation(summary = "Cancelar reserva (Staff/Admin)", operationId = "cancelarReservaPorStaff")
@@ -65,7 +79,21 @@ class ReservaController(
         @PathVariable id: UUID,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
+        logger.info("[CANCELAR_RESERVA_STAFF] Request. ID: {}, User: {}", id, principal.email)
         val cita = reservaService.cancelarPorStaff(id, principal)
+        logger.info("[CANCELAR_RESERVA_STAFF] Fin request - Exitoso")
         return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+    }
+
+    @Operation(summary = "Obtener agenda diaria (Staff/Admin)", operationId = "obtenerAgendaDiaria")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @GetMapping("/agenda")
+    fun obtenerAgendaDiaria(
+        @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fecha: LocalDate
+    ): ResponseEntity<List<CitaDetalladaResponse>> {
+        logger.info("[AGENDA_DIARIA] Request. Fecha: {}", fecha)
+        val agenda = reservaService.obtenerAgendaDiaria(fecha)
+        logger.info("[AGENDA_DIARIA] Fin request - Citas: {}", agenda.size)
+        return ResponseEntity.ok(agenda)
     }
 }

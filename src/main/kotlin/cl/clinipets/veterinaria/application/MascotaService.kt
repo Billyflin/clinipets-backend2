@@ -10,6 +10,7 @@ import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRepository
+import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -19,8 +20,11 @@ class MascotaService(
     private val mascotaRepository: MascotaRepository,
     private val userRepository: UserRepository
 ) {
+    private val logger = LoggerFactory.getLogger(MascotaService::class.java)
+
     @Transactional
     fun crear(request: MascotaCreateRequest, tutor: JwtPayload): MascotaResponse {
+        logger.debug("[MASCOTA_SERVICE] Creando mascota: {} para tutor: {}", request.nombre, tutor.email)
         val user = userRepository.findById(tutor.userId)
             .orElseThrow { NotFoundException("Tutor no encontrado") }
         val mascota = mascotaRepository.save(
@@ -37,6 +41,7 @@ class MascotaService(
                 tutor = user
             )
         )
+        logger.info("[MASCOTA_SERVICE] Mascota creada exitosamente con ID: {}", mascota.id)
         return mascota.toResponse()
     }
 
@@ -50,6 +55,7 @@ class MascotaService(
 
     @Transactional
     fun actualizar(id: UUID, request: MascotaUpdateRequest, tutor: JwtPayload): MascotaResponse {
+        logger.debug("[MASCOTA_SERVICE] Actualizando mascota ID: {}", id)
         val mascota = findMascotaDeTutor(id, tutor)
         mascota.nombre = request.nombre
         mascota.pesoActual = request.pesoActual
@@ -60,13 +66,17 @@ class MascotaService(
         request.chipIdentificador?.let { mascota.chipIdentificador = it }
         request.temperamento?.let { mascota.temperamento = it }
         
-        return mascotaRepository.save(mascota).toResponse()
+        val updated = mascotaRepository.save(mascota)
+        logger.info("[MASCOTA_SERVICE] Mascota actualizada exitosamente")
+        return updated.toResponse()
     }
 
     @Transactional
     fun eliminar(id: UUID, tutor: JwtPayload) {
+        logger.warn("[MASCOTA_SERVICE] Eliminando mascota ID: {}", id)
         val mascota = findMascotaDeTutor(id, tutor)
         mascotaRepository.delete(mascota)
+        logger.info("[MASCOTA_SERVICE] Mascota eliminada")
     }
 
     private fun findMascotaDeTutor(id: UUID, tutor: JwtPayload): Mascota {

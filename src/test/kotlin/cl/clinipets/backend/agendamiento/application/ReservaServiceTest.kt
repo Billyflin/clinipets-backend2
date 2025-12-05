@@ -1,5 +1,6 @@
 package cl.clinipets.backend.agendamiento.application
 
+import cl.clinipets.agendamiento.api.DetalleReservaRequest
 import cl.clinipets.agendamiento.application.ReservaService
 import cl.clinipets.agendamiento.domain.OrigenCita
 import cl.clinipets.pagos.application.PagoService
@@ -9,6 +10,7 @@ import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.Especie
 import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.domain.Sexo
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
@@ -97,6 +99,8 @@ class ReservaServiceTest(
             Mascota(
                 nombre = "Firulais",
                 especie = Especie.PERRO,
+                raza = "Mestizo",
+                sexo = Sexo.MACHO,
                 pesoActual = BigDecimal("8.5"),
                 // Usamos LocalDate para fecha de nacimiento
                 fechaNacimiento = LocalDate.of(2022, 5, 10),
@@ -113,17 +117,26 @@ class ReservaServiceTest(
         val inicio = fechaSabado.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
         
         val result = reservaService.crearReserva(
-            servicioId = servicio.id!!,
-            mascotaId = mascota.id!!,
+            detallesRequest = listOf(
+                DetalleReservaRequest(
+                    servicioId = servicio.id!!,
+                    mascotaId = mascota.id!!
+                )
+            ),
             fechaHoraInicio = inicio,
             origen = OrigenCita.APP,
             tutor = tutorPayload
         )
         assertEquals("https://pago.test", result.paymentUrl)
-        assertEquals(servicio.id, result.cita.servicioId)
-        assertEquals(mascota.id, result.cita.mascotaId)
+        
+        // Cita properties checks
         assertEquals(tutorPayload.userId, result.cita.tutorId)
         assertEquals(30000, result.cita.precioFinal)
+        
+        // Detalles checks
+        assertEquals(1, result.cita.detalles.size)
+        assertEquals(servicio.id, result.cita.detalles[0].servicio.id)
+        assertEquals(mascota.id, result.cita.detalles[0].mascota?.id)
     }
 
     private fun siguienteSabadoAMas(hoy: LocalDate): LocalDate {

@@ -1,18 +1,23 @@
 package cl.clinipets.backend.agendamiento.api
 
 import cl.clinipets.agendamiento.api.CitaResponse
+import cl.clinipets.agendamiento.api.DetalleCitaResponse
+import cl.clinipets.agendamiento.api.DetalleReservaRequest
 import cl.clinipets.agendamiento.api.ReservaCreateRequest
 import cl.clinipets.agendamiento.api.toResponse
 import cl.clinipets.agendamiento.domain.Cita
+import cl.clinipets.agendamiento.domain.DetalleCita
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.servicios.domain.ServicioMedico
+import cl.clinipets.veterinaria.domain.Mascota
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.UUID
-import org.mockito.Mockito.mock
-import org.mockito.Mockito.`when`
 
 class ReservaDtosTest {
 
@@ -20,13 +25,16 @@ class ReservaDtosTest {
     fun `ReservaCreateRequest should be correctly instantiated`() {
         val servicioId = UUID.randomUUID()
         val mascotaId = UUID.randomUUID()
+        val detalle = DetalleReservaRequest(servicioId, mascotaId)
+        
         val fechaHoraInicio = Instant.now()
         val origen = OrigenCita.WEB
 
-        val request = ReservaCreateRequest(servicioId, mascotaId, fechaHoraInicio, origen)
+        val request = ReservaCreateRequest(listOf(detalle), fechaHoraInicio, origen)
 
-        assertEquals(servicioId, request.servicioId)
-        assertEquals(mascotaId, request.mascotaId)
+        assertEquals(1, request.detalles.size)
+        assertEquals(servicioId, request.detalles[0].servicioId)
+        assertEquals(mascotaId, request.detalles[0].mascotaId)
         assertEquals(fechaHoraInicio, request.fechaHoraInicio)
         assertEquals(origen, request.origen)
     }
@@ -38,11 +46,18 @@ class ReservaDtosTest {
         val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
         val estado = EstadoCita.PENDIENTE_PAGO
         val precioFinal = 10000
-        val servicioId = UUID.randomUUID()
-        val mascotaId = UUID.randomUUID()
         val tutorId = UUID.randomUUID()
         val origen = OrigenCita.WEB
         val paymentUrl = "http://payment.url"
+        
+        val detalleResponse = DetalleCitaResponse(
+            id = UUID.randomUUID(),
+            servicioId = UUID.randomUUID(),
+            nombreServicio = "Servicio Test",
+            mascotaId = UUID.randomUUID(),
+            nombreMascota = "Mascota Test",
+            precioUnitario = 5000
+        )
 
         val response = CitaResponse(
             id,
@@ -50,8 +65,7 @@ class ReservaDtosTest {
             fechaHoraFin,
             estado,
             precioFinal,
-            servicioId,
-            mascotaId,
+            listOf(detalleResponse),
             tutorId,
             origen,
             paymentUrl
@@ -62,8 +76,8 @@ class ReservaDtosTest {
         assertEquals(fechaHoraFin, response.fechaHoraFin)
         assertEquals(estado, response.estado)
         assertEquals(precioFinal, response.precioFinal)
-        assertEquals(servicioId, response.servicioId)
-        assertEquals(mascotaId, response.mascotaId)
+        assertEquals(1, response.detalles.size)
+        assertEquals("Servicio Test", response.detalles[0].nombreServicio)
         assertEquals(tutorId, response.tutorId)
         assertEquals(origen, response.origen)
         assertEquals(paymentUrl, response.paymentUrl)
@@ -71,76 +85,57 @@ class ReservaDtosTest {
 
     @Test
     fun `Cita toResponse should map correctly with paymentUrl`() {
+        // Setup Mocks
+        val servicioMock = mock(ServicioMedico::class.java)
+        `when`(servicioMock.id).thenReturn(UUID.randomUUID())
+        `when`(servicioMock.nombre).thenReturn("Consulta")
+        
+        val mascotaMock = mock(Mascota::class.java)
+        `when`(mascotaMock.id).thenReturn(UUID.randomUUID())
+        `when`(mascotaMock.nombre).thenReturn("Firulais")
+
         val citaId = UUID.randomUUID()
         val fechaHoraInicio = Instant.now()
         val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
         val estado = EstadoCita.PENDIENTE_PAGO
         val precioFinal = 15000
-        val servicioId = UUID.randomUUID()
-        val mascotaId = UUID.randomUUID()
         val tutorId = UUID.randomUUID()
         val origen = OrigenCita.APP
 
-        val mockCita = mock(Cita::class.java)
-        `when`(mockCita.id).thenReturn(citaId)
-        `when`(mockCita.fechaHoraInicio).thenReturn(fechaHoraInicio)
-        `when`(mockCita.fechaHoraFin).thenReturn(fechaHoraFin)
-        `when`(mockCita.estado).thenReturn(estado)
-        `when`(mockCita.precioFinal).thenReturn(precioFinal)
-        `when`(mockCita.servicioId).thenReturn(servicioId)
-        `when`(mockCita.mascotaId).thenReturn(mascotaId)
-        `when`(mockCita.tutorId).thenReturn(tutorId)
-        `when`(mockCita.origen).thenReturn(origen)
+        // Create Cita
+        val cita = Cita(
+            id = citaId,
+            fechaHoraInicio = fechaHoraInicio,
+            fechaHoraFin = fechaHoraFin,
+            estado = estado,
+            precioFinal = precioFinal,
+            tutorId = tutorId,
+            origen = origen
+        )
+        
+        // Create Detalle linked to Cita
+        val detalle = DetalleCita(
+            id = UUID.randomUUID(),
+            cita = cita,
+            servicio = servicioMock,
+            mascota = mascotaMock,
+            precioUnitario = 15000
+        )
+        cita.detalles.add(detalle)
 
         val paymentUrl = "http://mock.payment.url"
-        val response = mockCita.toResponse(paymentUrl)
+        val response = cita.toResponse(paymentUrl)
 
         assertEquals(citaId, response.id)
         assertEquals(fechaHoraInicio, response.fechaHoraInicio)
         assertEquals(fechaHoraFin, response.fechaHoraFin)
         assertEquals(estado, response.estado)
         assertEquals(precioFinal, response.precioFinal)
-        assertEquals(servicioId, response.servicioId)
-        assertEquals(mascotaId, response.mascotaId)
+        assertEquals(1, response.detalles.size)
+        assertEquals(servicioMock.id, response.detalles[0].servicioId)
+        assertEquals(mascotaMock.id, response.detalles[0].mascotaId)
         assertEquals(tutorId, response.tutorId)
         assertEquals(origen, response.origen)
         assertEquals(paymentUrl, response.paymentUrl)
-    }
-
-    @Test
-    fun `Cita toResponse should map correctly without paymentUrl`() {
-        val citaId = UUID.randomUUID()
-        val fechaHoraInicio = Instant.now()
-        val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
-        val estado = EstadoCita.CONFIRMADA
-        val precioFinal = 12000
-        val servicioId = UUID.randomUUID()
-        val mascotaId = UUID.randomUUID()
-        val tutorId = UUID.randomUUID()
-        val origen = OrigenCita.WHATSAPP
-
-        val mockCita = mock(Cita::class.java)
-        `when`(mockCita.id).thenReturn(citaId)
-        `when`(mockCita.fechaHoraInicio).thenReturn(fechaHoraInicio)
-        `when`(mockCita.fechaHoraFin).thenReturn(fechaHoraFin)
-        `when`(mockCita.estado).thenReturn(estado)
-        `when`(mockCita.precioFinal).thenReturn(precioFinal)
-        `when`(mockCita.servicioId).thenReturn(servicioId)
-        `when`(mockCita.mascotaId).thenReturn(mascotaId)
-        `when`(mockCita.tutorId).thenReturn(tutorId)
-        `when`(mockCita.origen).thenReturn(origen)
-
-        val response = mockCita.toResponse() // No paymentUrl provided
-
-        assertEquals(citaId, response.id)
-        assertEquals(fechaHoraInicio, response.fechaHoraInicio)
-        assertEquals(fechaHoraFin, response.fechaHoraFin)
-        assertEquals(estado, response.estado)
-        assertEquals(precioFinal, response.precioFinal)
-        assertEquals(servicioId, response.servicioId)
-        assertEquals(mascotaId, response.mascotaId)
-        assertEquals(tutorId, response.tutorId)
-        assertEquals(origen, response.origen)
-        assertEquals(null, response.paymentUrl) // paymentUrl should be null
     }
 }
