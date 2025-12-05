@@ -29,7 +29,7 @@ class InventarioService(
             servicioMedicoRepository.save(servicio)
         } catch (ex: ObjectOptimisticLockingFailureException) {
             logger.warn("[INVENTARIO_CONCURRENCIA] Falló la actualización de stock para {}. Se reintentará.", servicio.nombre)
-            throw ConflictException("El stock ha cambiado mientras realizabas la operación, por favor intenta nuevamente")
+            throw ConflictException("El stock cambió mientras procesábamos tu solicitud. Por favor, intenta de nuevo.")
         }
         logger.info("[INVENTARIO] Stock actualizado. Servicio: {}, NuevoStock: {}", servicio.nombre, servicio.stock)
     }

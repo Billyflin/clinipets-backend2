@@ -14,7 +14,7 @@ data class ServicioMedico(
     val id: UUID? = null,
 
     @Version
-    val version: Long? = null,
+    var version: Long? = null,
 
     @Column(nullable = false, unique = true)
     val nombre: String,

@@ -27,6 +27,9 @@ data class User(
     @Column(nullable = false, length = 32)
     var role: UserRole = UserRole.CLIENT,
 
+    @Column(length = 512)
+    var fcmToken: String? = null,
+
     @Column(nullable = false, updatable = false)
     val createdAt: Instant = Instant.now()
 )

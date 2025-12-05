@@ -309,10 +309,25 @@ class ReservaService(
     fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
         val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
 
+        val pendientesRecientes = citas
+            .filter { it.estado == EstadoCita.PENDIENTE_PAGO }
+            .sortedByDescending { it.createdAt }
+            .take(3)
+
+        pendientesRecientes.forEach { cita ->
+            val estadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
+            if (estadoPago.estado == EstadoPagoMP.APROBADO) {
+                cita.estado = EstadoCita.CONFIRMADA
+                cita.mpPaymentId = estadoPago.paymentId
+                citaRepository.save(cita)
+                logger.info("Auto-healing listado: Cita {} confirmada", cita.id)
+            }
+        }
+
         return citas.map { it.toDetalladaResponse(it.paymentUrl) }
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun obtenerReserva(id: UUID, solicitante: JwtPayload): CitaDetalladaResponse {
         logger.info("[OBTENER_RESERVA] Request. ID: {}, Solicitante: {}", id, solicitante.email)
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
@@ -324,11 +339,12 @@ class ReservaService(
                 throw UnauthorizedException("No tienes permiso para ver esta reserva")
             }
         }
+        val citaVerificada = autoHealPago(cita)
         logger.info("[OBTENER_RESERVA] Acceso permitido. Retornando detalle.")
-        return cita.toDetalladaResponse(cita.paymentUrl)
+        return citaVerificada.toDetalladaResponse(citaVerificada.paymentUrl)
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     fun obtenerHistorialMascota(mascotaId: UUID, solicitante: JwtPayload): List<CitaDetalladaResponse> {
         logger.info("[HISTORIAL_MASCOTA] Request. MascotaID: {}, Solicitante: {}", mascotaId, solicitante.email)
 
@@ -345,7 +361,8 @@ class ReservaService(
 
         val citas = citaRepository.findAllByMascotaId(mascotaId)
         logger.info("[HISTORIAL_MASCOTA] Encontradas {} citas para mascota {}", citas.size, mascotaId)
-        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
+        val citasVerificadas = citas.map { autoHealPago(it) }
+        return citasVerificadas.map { it.toDetalladaResponse(it.paymentUrl) }
     }
 
     @Transactional
@@ -471,5 +488,19 @@ class ReservaService(
             }
         }
         logger.info("[CLEANUP] Proceso finalizado.")
+    }
+
+    private fun autoHealPago(cita: Cita): Cita {
+        if (cita.estado != EstadoCita.PENDIENTE_PAGO) return cita
+        val referencia = cita.id?.toString() ?: return cita
+        val estadoPago = pagoService.consultarEstadoPago(referencia)
+
+        if (estadoPago.estado != EstadoPagoMP.APROBADO) return cita
+
+        cita.estado = EstadoCita.CONFIRMADA
+        cita.mpPaymentId = estadoPago.paymentId
+        val saved = citaRepository.save(cita)
+        logger.info("Auto-healing: Cita {} confirmada al consultar estado", cita.id)
+        return saved
     }
 }
