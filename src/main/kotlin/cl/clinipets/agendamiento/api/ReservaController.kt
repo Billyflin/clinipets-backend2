@@ -98,6 +98,19 @@ class ReservaController(
         return ResponseEntity.ok(response)
     }
 
+    @Operation(summary = "Finalizar cita y registrar pago saldo (Staff/Admin)", operationId = "finalizarCita")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    @PostMapping("/{id}/finalizar")
+    fun finalizar(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<CitaResponse> {
+        logger.info("[FINALIZAR_CITA] Request. ID: {}, User: {}", id, principal.email)
+        val cita = reservaService.finalizarCita(id, principal)
+        logger.info("[FINALIZAR_CITA] Fin request - Exitoso")
+        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+    }
+
     @Operation(summary = "Cancelar reserva (Staff/Admin)", operationId = "cancelarReservaPorStaff")
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @DeleteMapping("/gestion/{id}")

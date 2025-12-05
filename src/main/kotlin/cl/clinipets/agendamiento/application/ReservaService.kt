@@ -321,6 +321,31 @@ class ReservaService(
     }
 
     @Transactional
+    fun finalizarCita(id: UUID, staff: JwtPayload): Cita {
+        logger.info("[FINALIZAR_CITA] Request. CitaID: {}, Staff: {}", id, staff.email)
+        
+        // Validate permissions
+        if (staff.role != UserRole.STAFF && staff.role != UserRole.ADMIN) {
+            logger.warn("[FINALIZAR_CITA] Acceso denegado. User {} no es Staff/Admin", staff.email)
+            throw UnauthorizedException("No tienes permisos para finalizar citas")
+        }
+
+        val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
+
+        if (cita.estado == EstadoCita.FINALIZADA || cita.estado == EstadoCita.CANCELADA) {
+            logger.warn("[FINALIZAR_CITA] Intento de finalizar cita en estado inválido: {}", cita.estado)
+            throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
+        }
+
+        // Mark as FINALIZED. Logic assumes full payment at counter.
+        cita.estado = EstadoCita.FINALIZADA
+        
+        val saved = citaRepository.save(cita)
+        logger.info("[FINALIZAR_CITA] Cita finalizada correctamente. Saldo pendiente virtualmente en 0.")
+        return saved
+    }
+
+    @Transactional
     fun cancelarPorStaff(citaId: UUID, staff: JwtPayload): Cita {
         logger.info("[CANCELAR_STAFF] Iniciando cancelación administrativa. CitaID: {}, Staff: {}", citaId, staff.email)
         val cita = citaRepository.findById(citaId).orElseThrow { NotFoundException("Cita no encontrada") }
