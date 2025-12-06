@@ -19,16 +19,25 @@ class NotificationService(
 
     private val logger = LoggerFactory.getLogger(NotificationService::class.java)
 
-    fun enviarNotificacion(userId: UUID, titulo: String, cuerpo: String) {
+    fun enviarNotificacion(
+        userId: UUID,
+        titulo: String,
+        cuerpo: String,
+        data: Map<String, String> = emptyMap()
+    ) {
         if (!firebaseDisponible()) return
 
         val user = userRepository.findById(userId)
             .orElseThrow { NotFoundException("Usuario no encontrado") }
 
-        enviarMensaje(user, titulo, cuerpo)
+        enviarMensaje(user, titulo, cuerpo, data)
     }
 
-    fun enviarNotificacionAStaff(titulo: String, cuerpo: String) {
+    fun enviarNotificacionAStaff(
+        titulo: String,
+        cuerpo: String,
+        data: Map<String, String> = emptyMap()
+    ) {
         if (!firebaseDisponible()) return
 
         val staffUsuarios = userRepository.findAllByRoleIn(listOf(UserRole.STAFF, UserRole.ADMIN))
@@ -37,7 +46,7 @@ class NotificationService(
             return
         }
 
-        staffUsuarios.forEach { enviarMensaje(it, titulo, cuerpo) }
+        staffUsuarios.forEach { enviarMensaje(it, titulo, cuerpo, data) }
     }
 
     private fun firebaseDisponible(): Boolean {
@@ -48,7 +57,12 @@ class NotificationService(
         return true
     }
 
-    private fun enviarMensaje(user: User, titulo: String, cuerpo: String) {
+    private fun enviarMensaje(
+        user: User,
+        titulo: String,
+        cuerpo: String,
+        data: Map<String, String>
+    ) {
         val token = user.fcmToken
         if (token.isNullOrBlank()) {
             logger.warn("[NOTIFS] Usuario {} sin fcmToken. Notificación descartada.", user.email)
@@ -58,6 +72,7 @@ class NotificationService(
         val message = Message.builder()
             .setToken(token)
             .setNotification(Notification.builder().setTitle(titulo).setBody(cuerpo).build())
+            .putAllData(data)
             .build()
 
         try {

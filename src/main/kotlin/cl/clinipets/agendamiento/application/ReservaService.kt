@@ -16,6 +16,7 @@ import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
+import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.pagos.application.EstadoPagoMP
 import cl.clinipets.pagos.application.PagoService
@@ -43,6 +44,7 @@ class ReservaService(
     private val pagoService: PagoService,
     private val notificationService: NotificationService,
     private val inventarioService: InventarioService,
+    private val userRepository: UserRepository,
     private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(ReservaService::class.java)
@@ -220,7 +222,7 @@ class ReservaService(
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
-            notificarStaffCita(guardada, "Nueva reserva", "Se creó una reserva en estado ${guardada.estado}")
+            notificarNuevaReserva(guardada, tutor)
             return ReservaResult(guardada, paymentUrl)
         } else {
             // Caso de productos sin duración (Venta directa o retiro)
@@ -256,7 +258,7 @@ class ReservaService(
                 externalReference = guardada.id!!.toString()
             )
             guardada.paymentUrl = paymentUrl
-            notificarStaffCita(guardada, "Nueva reserva", "Se creó una reserva en estado ${guardada.estado}")
+            notificarNuevaReserva(guardada, tutor)
             return ReservaResult(guardada, paymentUrl)
         }
     }
@@ -520,9 +522,34 @@ class ReservaService(
         notificationService.enviarNotificacion(
             cita.tutorId,
             "¡Reserva Confirmada!",
-            "Tu cita para $servicioNombre está lista."
+            "Tu cita para $servicioNombre está lista",
+            data = mapOf("type" to "CLIENT_RESERVATIONS")
         )
         notificarStaffCita(cita, "Pago confirmado", "La reserva quedó en estado ${cita.estado}")
+    }
+
+    private fun notificarNuevaReserva(cita: Cita, tutor: JwtPayload) {
+        val citaId = cita.id
+        if (citaId == null) {
+            logger.warn("[NOTIFS] Intento de notificar nueva reserva sin ID asignado.")
+            return
+        }
+        val tutorNombre = userRepository.findById(tutor.userId)
+            .map { it.name }
+            .orElse(null)
+            ?.takeIf { it.isNotBlank() }
+            ?: tutor.email.substringBefore("@")
+        val hora = cita.fechaHoraInicio.atZone(clinicZoneId)
+            .toLocalTime()
+            .truncatedTo(ChronoUnit.MINUTES)
+        notificationService.enviarNotificacionAStaff(
+            "Nueva Reserva",
+            "Cliente $tutorNombre agendó para $hora",
+            mapOf(
+                "type" to "STAFF_CITA_DETAIL",
+                "citaId" to citaId.toString()
+            )
+        )
     }
 
     private fun notificarStaffCita(cita: Cita, titulo: String, detalle: String) {
