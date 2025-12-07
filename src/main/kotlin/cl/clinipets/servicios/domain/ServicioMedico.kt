@@ -29,7 +29,7 @@ data class ServicioMedico(
     val requierePeso: Boolean,
 
     @Column(nullable = false)
-    val duracionMinutos: Int,
+    var duracionMinutos: Int,
 
     @Column(nullable = false)
     val activo: Boolean = true,

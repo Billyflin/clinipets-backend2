@@ -65,11 +65,22 @@ class MetaService(
     private fun procesarYResponder(userPhone: String, userMessage: String) {
         // Llamar al Agente IA
         val respuestaIa = veterinaryAgentService.procesarMensaje(userPhone, userMessage)
+        logger.warn("[DEBUG_PAGO] MetaService recibió respuesta del Agente: {}", respuestaIa)
 
         // Responder al usuario según tipo
         when (respuestaIa) {
             is cl.clinipets.core.ia.AgentResponse.Text -> {
+                logger.warn(
+                    "[DEBUG_PAGO] Es tipo Texto. Content: '{}', PaymentURL: '{}'",
+                    respuestaIa.content,
+                    respuestaIa.paymentUrl
+                )
                 enviarMensaje(userPhone, respuestaIa.content)
+                val paymentUrl = respuestaIa.paymentUrl
+                if (paymentUrl != null) {
+                    logger.warn("[DEBUG_PAGO] Intentando enviar mensaje extra con link...")
+                    enviarMensaje(userPhone, "Para confirmar tu cita, realiza el abono aquí: $paymentUrl")
+                }
             }
 
             is cl.clinipets.core.ia.AgentResponse.ListOptions -> {
