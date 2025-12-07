@@ -57,12 +57,28 @@ data class Message(
     val id: String = "",
     val timestamp: String = "",
     val type: String = "",
-    val text: TextMessage? = null
+    val text: TextMessage? = null,
+    val interactive: InteractiveMessage? = null
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)
 data class TextMessage(
     val body: String = ""
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class InteractiveMessage(
+    val type: String = "", // "list_reply" or "button_reply"
+    @JsonProperty("list_reply")
+    val listReply: InteractiveReply? = null,
+    @JsonProperty("button_reply")
+    val buttonReply: InteractiveReply? = null
+)
+
+@JsonIgnoreProperties(ignoreUnknown = true)
+data class InteractiveReply(
+    val id: String = "",
+    val title: String = ""
 )
 
 @JsonIgnoreProperties(ignoreUnknown = true)

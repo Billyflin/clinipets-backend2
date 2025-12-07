@@ -41,6 +41,8 @@ services:
       N8N_API_KEY: ${N8N_API_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
 
+      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
+      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
 
       # ☢️ FIX NUCLEAR DE FECHAS (Vital para Android) ☢️
       # Esto obliga a Spring a devolver "2025-12-01T10:00:00Z" (Texto)

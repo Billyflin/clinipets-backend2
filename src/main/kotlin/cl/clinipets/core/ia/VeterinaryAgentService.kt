@@ -1,43 +1,72 @@
 package cl.clinipets.core.ia
 
-import cl.clinipets.agendamiento.application.DisponibilidadService
+import cl.clinipets.agendamiento.api.DetalleReservaRequest
+import cl.clinipets.agendamiento.application.ReservaService
+import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
+import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
-import com.google.genai.Client
 import com.google.genai.types.*
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
+import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
+
+sealed class AgentResponse {
+    data class Text(val content: String) : AgentResponse()
+    data class ListOptions(
+        val text: String,
+        val buttonLabel: String,
+        val options: Map<String, String>
+    ) : AgentResponse()
+}
 
 @Service
 class VeterinaryAgentService(
     private val userRepository: UserRepository,
     private val mascotaRepository: MascotaRepository,
-    private val disponibilidadService: DisponibilidadService,
+    private val disponibilidadService: cl.clinipets.agendamiento.application.DisponibilidadService,
+    private val reservaService: ReservaService,
+    private val servicioMedicoRepository: ServicioMedicoRepository,
     private val clinicZoneId: ZoneId,
     private val client: GenAiClientWrapper,
     @Value("\${gemini.model:gemini-2.0-flash-lite}") private val modelName: String
 ) {
     private val logger = LoggerFactory.getLogger(VeterinaryAgentService::class.java)
+    private val chatHistory = ConcurrentHashMap<String, MutableList<Content>>()
 
     init {
         logger.info("[IA_INIT] Servicio Agente Veterinario listo. Modelo: $modelName")
     }
 
-    /**
-     * Lógica principal del Chatbot (WhatsApp)
-     */
-    fun procesarMensaje(telefono: String, mensajeUsuario: String): String {
+    fun procesarMensaje(telefono: String, mensajeUsuario: String): AgentResponse {
         logger.info("[IA_AGENT] Procesando mensaje para teléfono: $telefono")
 
-        // 1. Recuperar contexto del usuario
+        // 1. Gestión de Memoria
+        val historial = chatHistory.computeIfAbsent(telefono) { mutableListOf() }
+        if (historial.size > 20) {
+            val sublist = historial.subList(0, historial.size - 10)
+            sublist.clear()
+        }
+
+        // 2. Contexto Usuario
         val user = userRepository.findByPhone(telefono)
             ?: userRepository.findByPhone(telefono.removePrefix("56"))
             ?: userRepository.findByPhone("+" + telefono)
+
+        logger.info(
+            "[DIAGNOSTICO] Usuario BD encontrado: {}",
+            if (user != null) "SI (ID: ${user.id})" else "NO (Cliente Nuevo)"
+        )
 
         val contextoCliente = if (user != null) {
             val mascotas = mascotaRepository.findAllByTutorId(user.id!!)
@@ -51,9 +80,9 @@ class VeterinaryAgentService(
             "Cliente Nuevo."
         }
 
-        // 2. System Prompt del Agente
+        // 3. System Prompt
         val systemPromptText = """
-            Eres el asistente virtual de la veterinaria "Clinipets". 
+            Eres "CliniBot", el asistente virtual de la veterinaria "Clinipets". 
             Tu tono es cercano, profesional, empático y adaptado a Chile.
             
             Información del cliente: $contextoCliente
@@ -61,15 +90,16 @@ class VeterinaryAgentService(
             
             Objetivos:
             1. Responder dudas sobre servicios veterinarios.
-            2. Guiar al usuario para que agende hora en: https://clinipets.cl/agendar?phone=$telefono
+            2. Guiar al usuario para que agende hora.
             3. Si preguntan por DISPONIBILIDAD u HORAS para una fecha específica, USA la herramienta 'consultar_disponibilidad'.
+            4. Si el usuario confirma una hora específica para agendar, USA la herramienta 'reservar_cita'.
             
             Reglas:
             - Sé conciso (máximo 3-4 oraciones).
-            - Si no puedes usar la herramienta, di que no tienes acceso a la agenda en este momento.
         """.trimIndent()
 
-        // 3. Configuración
+        logger.info("[DIAGNOSTICO] System Prompt generado: \n$systemPromptText")
+
         val tools = crearHerramientas()
 
         val systemInstructionContent = Content.builder()
@@ -80,83 +110,226 @@ class VeterinaryAgentService(
         val config = GenerateContentConfig.builder()
             .tools(tools)
             .systemInstruction(systemInstructionContent)
-            .temperature(0.7f)
+            .temperature(0.5f)
             .build()
 
-        // 4. Mensaje del Usuario
         val userContent = Content.builder()
             .role("user")
             .parts(listOf(Part.builder().text(mensajeUsuario).build()))
             .build()
 
+        val mensajesParaEnviar = ArrayList(historial)
+        mensajesParaEnviar.add(userContent)
+
         return try {
             // --- PRIMERA LLAMADA (Turno 1) ---
-            val response1 = client.generateContent(modelName, userContent, config)
+            val response1 = client.generateContent(modelName, mensajesParaEnviar, config)
 
-            // Desempaquetado seguro de la respuesta
             val candidates = response1.candidates().orElse(Collections.emptyList())
             val candidate = candidates.firstOrNull()
             val modelContent = candidate?.content()?.orElse(null)
             val parts = modelContent?.parts()?.orElse(Collections.emptyList()) ?: emptyList()
 
-            // Buscar si la IA quiere ejecutar una función
             val functionCallPart = parts.firstOrNull { it.functionCall().isPresent }
             val functionCall = functionCallPart?.functionCall()?.orElse(null)
+
+            val agentResponse: AgentResponse
 
             if (functionCall != null) {
                 val funcName = functionCall.name().orElse("unknown")
                 logger.info("[IA_AGENT] La IA solicita ejecutar herramienta: $funcName")
 
-                // 5. Ejecutar lógica de negocio
-                val functionResponsePart = ejecutarHerramienta(functionCall)
+                if (funcName == "consultar_disponibilidad") {
+                    val argsMap = functionCall.args().orElse(Collections.emptyMap())
+                    val fechaStr = argsMap["fecha"] as? String
 
-                // 6. Construir mensaje con el resultado de la función
+                    var listOptionsResponse: AgentResponse.ListOptions? = null
+
+                    if (fechaStr != null) {
+                        try {
+                            val fecha = LocalDate.parse(fechaStr)
+                            val slots = disponibilidadService.obtenerSlots(fecha, 30)
+
+                            if (slots.isNotEmpty()) {
+                                val formatter = DateTimeFormatter.ofPattern("HH:mm").withZone(clinicZoneId)
+                                val optionsMap = slots.associate { slot ->
+                                    val horaStr = formatter.format(slot)
+                                    // ID único para procesar selección después
+                                    val id = "RES_${fechaStr}_$horaStr"
+                                    id to horaStr
+                                }
+
+                                listOptionsResponse = AgentResponse.ListOptions(
+                                    text = "He encontrado estas horas disponibles para el $fechaStr:",
+                                    buttonLabel = "Ver Horas",
+                                    options = optionsMap
+                                )
+
+                                // MEMORIA DE SISTEMA (Nota interna)
+                                historial.add(userContent)
+                                historial.add(
+                                    Content.builder()
+                                        .role("model")
+                                        .parts(
+                                            listOf(
+                                                Part.builder()
+                                                    .text("Sistema: Se ofrecieron horas al usuario para $fechaStr.")
+                                                    .build()
+                                            )
+                                        )
+                                        .build()
+                                )
+                            }
+                        } catch (e: Exception) {
+                            logger.warn("Error obteniendo slots para lista interactiva", e)
+                        }
+                    }
+
+                    if (listOptionsResponse != null) {
+                        return listOptionsResponse
+                    }
+                }
+
+                // Fallback: Flujo estándar (Texto) para 'reservar_cita' o errores de disponibilidad
+                // Aquí pasamos el teléfono también para que ejecutarHerramienta pueda re-buscar si es necesario o usarlo en logs
+                val functionResponsePart = ejecutarHerramienta(functionCall, user, telefono)
                 val toolContent = Content.builder()
                     .role("function")
                     .parts(listOf(functionResponsePart))
                     .build()
 
-                // 7. Segunda llamada (Turno 2) con historial: [User, Model(Call), Tool(Result)]
-                val history = listOf(userContent, modelContent!!, toolContent)
+                val historialConTool = ArrayList(mensajesParaEnviar)
+                historialConTool.add(modelContent!!)
+                historialConTool.add(toolContent)
 
-                // Configuración para la respuesta final (sin tools para evitar loops)
                 val finalConfig = GenerateContentConfig.builder()
                     .systemInstruction(systemInstructionContent)
                     .build()
 
-                val response2 = client.generateContent(modelName, history, finalConfig)
-                response2.text() ?: "No pude generar una respuesta final tras consultar la agenda."
+                val response2 = client.generateContent(modelName, historialConTool, finalConfig)
+                val textoFinal = response2.text() ?: "No pude completar la acción."
+
+                agentResponse = AgentResponse.Text(textoFinal)
+
+                // Guardar en memoria
+                historial.add(userContent)
+                historial.add(
+                    Content.builder().role("model").parts(listOf(Part.builder().text(textoFinal).build())).build()
+                )
 
             } else {
-                // Respuesta directa sin uso de herramientas
-                response1.text() ?: "Lo siento, no pude entenderte."
+                // Respuesta directa (Texto)
+                val textoFinal = response1.text() ?: "Lo siento, no pude entenderte."
+                agentResponse = AgentResponse.Text(textoFinal)
+
+                // Guardar en memoria
+                historial.add(userContent)
+                historial.add(
+                    Content.builder().role("model").parts(listOf(Part.builder().text(textoFinal).build())).build()
+                )
             }
+
+            agentResponse
+
         } catch (e: Exception) {
-            logger.error("[IA_AGENT] Error al procesar mensaje", e)
-            "Disculpa, estoy teniendo un problema técnico momentáneo."
+            logger.error("[CRITICAL_FAILURE] Excepción en flujo IA", e)
+            AgentResponse.Text("Disculpa, estoy teniendo un problema técnico momentáneo.")
         }
     }
 
-    private fun ejecutarHerramienta(functionCall: FunctionCall): Part {
+    private fun ejecutarHerramienta(functionCall: FunctionCall, user: User?, telefono: String): Part {
         val argsMap = functionCall.args().orElse(Collections.emptyMap())
-        val fechaStr = argsMap["fecha"] as? String
         val funcName = functionCall.name().orElse("")
 
-        val resultText = if (funcName == "consultar_disponibilidad" && fechaStr != null) {
-            try {
-                val fecha = LocalDate.parse(fechaStr)
-                val slots = disponibilidadService.obtenerSlots(fecha, 30)
-                if (slots.isEmpty()) "No quedan horas disponibles para el $fechaStr."
-                else {
-                    val formatter = DateTimeFormatter.ofPattern("HH:mm").withZone(clinicZoneId)
-                    val horas = slots.joinToString(", ") { formatter.format(it) }
-                    "Horas disponibles el $fechaStr: $horas"
-                }
-            } catch (e: Exception) {
-                "Fecha inválida o error en agenda."
+        logger.info("[DIAGNOSTICO] Ejecutando tool '{}' con args: {}", funcName, argsMap)
+
+        val resultText = when (funcName) {
+            "consultar_disponibilidad" -> {
+                val fechaStr = argsMap["fecha"] as? String
+                if (fechaStr != null) {
+                    try {
+                        val fecha = LocalDate.parse(fechaStr)
+                        val slots = disponibilidadService.obtenerSlots(fecha, 30)
+                        if (slots.isEmpty()) "No quedan horas disponibles para el $fechaStr."
+                        else "Se encontraron ${slots.size} horas. (Se deberían haber mostrado en lista)."
+                    } catch (e: Exception) {
+                        "Fecha inválida o error en agenda."
+                    }
+                } else "Error: Fecha requerida."
             }
-        } else {
-            "Error: Función desconocida o argumentos inválidos."
+
+            "reservar_cita" -> {
+                val fechaHoraStr = argsMap["fechaHora"] as? String
+
+                // Re-validación de usuario por si 'user' venía nulo pero existe en BD (caso borde)
+                var userDb = user
+                if (userDb == null) {
+                    userDb = userRepository.findByPhone(telefono)
+                        ?: userRepository.findByPhone(telefono.removePrefix("56"))
+                                ?: userRepository.findByPhone("+" + telefono)
+                }
+
+                logger.info("[DIAGNOSTICO_TOOL] Buscando usuario para reservar. Telefono: $telefono, Encontrado: ${userDb != null}")
+
+                if (userDb == null) {
+                    logger.warn("[DIAGNOSTICO_FAIL] ¡INTENTO DE RESERVA SIN USUARIO EN BD! El agente cree que registró al usuario pero no existe en Postgres.")
+                }
+
+                if (fechaHoraStr != null && userDb != null) {
+                    try {
+                        // 1. Parsear fecha
+                        // fechaHoraStr vendrá probablemente como '2025-12-08T10:00'
+                        val fechaHora = LocalDateTime.parse(fechaHoraStr)
+                        val fechaHoraInstant = fechaHora.atZone(clinicZoneId).toInstant()
+
+                        // 2. Validar Mascotas
+                        val mascotas = mascotaRepository.findAllByTutorId(userDb.id!!)
+                        if (mascotas.isEmpty()) {
+                            "Error: No tienes mascotas registradas. Debes registrar una mascota antes de agendar."
+                        } else {
+                            // MVP: Usamos la primera mascota encontrada
+                            val mascota = mascotas.first()
+
+                            // 3. Buscar Servicio
+                            val servicios = servicioMedicoRepository.findByActivoTrue()
+                            val servicio = servicios.find { it.nombre.equals("Consulta General", ignoreCase = true) }
+                                ?: servicios.firstOrNull()
+
+                            if (servicio == null) {
+                                "Error: No hay servicios médicos activos disponibles para agendar."
+                            } else {
+                                // 4. Crear Reserva
+                                val detalles =
+                                    listOf(DetalleReservaRequest(servicioId = servicio.id!!, mascotaId = mascota.id))
+                                val tutorPayload = JwtPayload(
+                                    userId = userDb.id!!,
+                                    email = userDb.email,
+                                    role = userDb.role,
+                                    expiresAt = Instant.now().plus(1, ChronoUnit.HOURS)
+                                )
+
+                                logger.info("[DIAGNOSTICO_TOOL] Iniciando creación de reserva para ${userDb.email} en $fechaHoraInstant")
+                                val resultado = reservaService.crearReserva(
+                                    detallesRequest = detalles,
+                                    fechaHoraInicio = fechaHoraInstant,
+                                    origen = OrigenCita.WHATSAPP,
+                                    tutor = tutorPayload
+                                )
+                                logger.info("[DIAGNOSTICO_TOOL] Reserva creada EXITOSAMENTE. ID: ${resultado.cita.id}")
+                                "Reserva creada exitosamente para ${mascota.nombre} el $fechaHoraStr. Por favor realiza el pago aquí para confirmar: ${resultado.paymentUrl}"
+                            }
+                        }
+                    } catch (e: Exception) {
+                        logger.error("[CRITICAL_FAILURE] Error creando reserva desde IA", e)
+                        "Ocurrió un error al intentar crear la reserva: ${e.message}"
+                    }
+                } else {
+                    if (userDb == null) "Error: No se pudo identificar al usuario para agendar."
+                    else "Error: Fecha y hora requerida."
+                }
+            }
+
+            else -> "Error: Función desconocida o argumentos inválidos."
         }
 
         return Part.builder()
@@ -170,13 +343,19 @@ class VeterinaryAgentService(
     }
 
     private fun crearHerramientas(): List<Tool> {
-        // Usamos Type.Known.STRING para evitar errores con el SDK generado
+        // Schema types
         val propFecha = Schema.builder()
             .type(com.google.genai.types.Type.Known.STRING)
             .description("Fecha en formato YYYY-MM-DD")
             .build()
 
-        val functionDecl = FunctionDeclaration.builder()
+        val propFechaHora = Schema.builder()
+            .type(com.google.genai.types.Type.Known.STRING)
+            .description("Fecha y hora en formato ISO-8601 (ej: 2025-12-08T10:00)")
+            .build()
+
+        // Tool 1: consultar_disponibilidad
+        val funcConsultar = FunctionDeclaration.builder()
             .name("consultar_disponibilidad")
             .description("Consulta disponibilidad de horas médicas en la clínica.")
             .parameters(
@@ -188,58 +367,42 @@ class VeterinaryAgentService(
             )
             .build()
 
-        // Usamos listOf() para envolver, ya que Tool.builder() espera vararg o lista según versión,
-        // pero con esta estructura suele compilar bien en Kotlin.
+        // Tool 2: reservar_cita
+        val funcReservar = FunctionDeclaration.builder()
+            .name("reservar_cita")
+            .description("Usa esta herramienta cuando el usuario confirme una hora específica para agendar.")
+            .parameters(
+                Schema.builder()
+                    .type(com.google.genai.types.Type.Known.OBJECT)
+                    .properties(mapOf("fechaHora" to propFechaHora))
+                    .required(listOf("fechaHora"))
+                    .build()
+            )
+            .build()
+
         return listOf(
             Tool.builder()
-                .functionDeclarations(functionDecl)
+                .functionDeclarations(listOf(funcConsultar, funcReservar))
                 .build()
         )
     }
 
-    /**
-     * Lógica de Moderación de Nombres
-     */
     fun esNombreInapropiado(texto: String): Boolean {
-        logger.info("[IA_MODERATOR] 🔍 Analizando texto: '{}'", texto)
-
-        val prompt = """
-            Tarea: Moderación de contenido.
-            Analiza si el siguiente nombre de usuario es ofensivo, un insulto, sexual, grosero o inapropiado en Chile o Latinoamérica.
-            Texto: "$texto"
-            Responde SOLO con un objeto JSON: {"inapropiado": boolean, "razon": "string"}
-        """.trimIndent()
-
         val userContent = Content.builder()
             .role("user")
-            .parts(listOf(Part.builder().text(prompt).build()))
+            .parts(listOf(Part.builder().text("Analiza si es ofensivo: $texto").build()))
             .build()
 
         val config = GenerateContentConfig.builder()
-            .temperature(0.0f) // Máximo determinismo
-            .responseMimeType("application/json") // Forzamos JSON
+            .temperature(0.0f)
+            .responseMimeType("application/json")
             .build()
 
         return try {
             val response = client.generateContent(modelName, userContent, config)
             val rawText = response.text() ?: "{}"
-
-            // Logueamos la respuesta cruda para auditoría
-            logger.debug("[IA_MODERATOR] Respuesta Raw: {}", rawText)
-
-            // Validación simple (sin parsear todo el JSON para ser más rápido/robusto ante errores de formato)
-            val esInapropiado = rawText.contains("\"inapropiado\": true")
-
-            if (esInapropiado) {
-                logger.warn("[IA_MODERATOR] ⛔ BLOQUEADO. Texto: '{}'. Razón en logs debug.", texto)
-            } else {
-                logger.info("[IA_MODERATOR] ✅ APROBADO. Texto: '{}'", texto)
-            }
-
-            esInapropiado
+            rawText.contains("\"inapropiado\": true")
         } catch (e: Exception) {
-            // Fail-open: Si la IA falla, permitimos el nombre pero logueamos el error grave
-            logger.error("[IA_MODERATOR] 💥 ERROR al consultar Gemini. Se permite por defecto. Excepción: {}", e.message)
             false
         }
     }

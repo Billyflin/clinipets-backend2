@@ -35,3 +35,5 @@ certs/
 firebase-service-account.json
 service-account.json
 *.json
+repomix-backendv2.xml
+repomix-output.xml
