@@ -1,12 +1,17 @@
 package cl.clinipets.servicios.application
 
 import cl.clinipets.core.web.ConflictException
+import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import org.slf4j.LoggerFactory
 import org.springframework.orm.ObjectOptimisticLockingFailureException
+import org.springframework.retry.annotation.Backoff
+import org.springframework.retry.annotation.Retryable
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Propagation
 import org.springframework.transaction.annotation.Transactional
+import java.util.*
 
 @Service
 class InventarioService(
@@ -14,8 +19,16 @@ class InventarioService(
 ) {
     private val logger = LoggerFactory.getLogger(InventarioService::class.java)
 
-    @Transactional
-    fun consumirStock(servicio: ServicioMedico, cantidad: Int = 1) {
+    @Retryable(
+        retryFor = [ObjectOptimisticLockingFailureException::class],
+        maxAttempts = 3,
+        backoff = Backoff(delay = 50)
+    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    fun consumirStock(servicioId: UUID, cantidad: Int = 1) {
+        val servicio = servicioMedicoRepository.findById(servicioId)
+            .orElseThrow { NotFoundException("Servicio no encontrado: $servicioId") }
+
         if (servicio.stock == null) return
 
         logger.debug("[INVENTARIO] Consumiendo stock. Servicio: {}, Cantidad: {}, StockActual: {}", servicio.nombre, cantidad, servicio.stock)
@@ -29,23 +42,44 @@ class InventarioService(
             servicioMedicoRepository.save(servicio)
         } catch (ex: ObjectOptimisticLockingFailureException) {
             logger.warn("[INVENTARIO_CONCURRENCIA] Falló la actualización de stock para {}. Se reintentará.", servicio.nombre)
-            throw ConflictException("El stock cambió mientras procesábamos tu solicitud. Por favor, intenta de nuevo.")
+            throw ex // Re-throw to trigger Retry
         }
         logger.info("[INVENTARIO] Stock actualizado. Servicio: {}, NuevoStock: {}", servicio.nombre, servicio.stock)
     }
 
-    @Transactional
+    @Retryable(
+        retryFor = [ObjectOptimisticLockingFailureException::class],
+        maxAttempts = 3,
+        backoff = Backoff(delay = 50)
+    )
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
     fun devolverStock(servicio: ServicioMedico, cantidad: Int = 1) {
-        if (servicio.stock == null) return
+        // Recargamos la entidad para tener la versión más reciente
+        val servicioFresco = servicioMedicoRepository.findById(servicio.id!!)
+            .orElse(null)
 
-        logger.debug("[INVENTARIO] Devolviendo stock. Servicio: {}, Cantidad: {}, StockActual: {}", servicio.nombre, cantidad, servicio.stock)
-        servicio.stock = servicio.stock!! + cantidad
+        if (servicioFresco == null || servicioFresco.stock == null) return
+
+        logger.debug(
+            "[INVENTARIO] Devolviendo stock. Servicio: {}, Cantidad: {}, StockActual: {}",
+            servicioFresco.nombre,
+            cantidad,
+            servicioFresco.stock
+        )
+        servicioFresco.stock = servicioFresco.stock!! + cantidad
         try {
-            servicioMedicoRepository.save(servicio)
+            servicioMedicoRepository.save(servicioFresco)
         } catch (ex: ObjectOptimisticLockingFailureException) {
-            logger.warn("[INVENTARIO_CONCURRENCIA] Falló la devolución de stock para {}.", servicio.nombre)
-            // En la devolución no lanzamos excepción al usuario, solo logueamos. Se puede reintentar internamente si es crítico.
+            logger.warn(
+                "[INVENTARIO_CONCURRENCIA] Falló la devolución de stock para {}. Se reintentará.",
+                servicioFresco.nombre
+            )
+            throw ex // Re-throw to trigger Retry
         }
-        logger.info("[INVENTARIO] Stock devuelto. Servicio: {}, NuevoStock: {}", servicio.nombre, servicio.stock)
+        logger.info(
+            "[INVENTARIO] Stock devuelto. Servicio: {}, NuevoStock: {}",
+            servicioFresco.nombre,
+            servicioFresco.stock
+        )
     }
 }

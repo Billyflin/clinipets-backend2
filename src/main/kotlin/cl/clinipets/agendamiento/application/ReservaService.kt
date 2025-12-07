@@ -123,7 +123,7 @@ class ReservaService(
             if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
 
             // Delegate inventory management
-            inventarioService.consumirStock(servicio)
+            inventarioService.consumirStock(servicio.id!!)
 
             var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
             var precioItem = servicio.precioBase

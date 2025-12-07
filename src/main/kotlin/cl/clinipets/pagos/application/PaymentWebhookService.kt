@@ -7,7 +7,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.util.UUID
+import java.util.*
 
 @Service
 class PaymentWebhookService(
@@ -76,7 +76,8 @@ class PaymentWebhookService(
         notificationService.enviarNotificacion(
             tutorId,
             "¡Reserva Confirmada!",
-            "Tu pago fue aprobado y la cita $citaId quedó confirmada."
+            "Tu pago fue aprobado y la cita $citaId quedó confirmada.",
+            mapOf("type" to "PAYMENT_CONFIRMED", "citaId" to citaId.toString())
         )
         notificationService.enviarNotificacionAStaff(
             "Pago confirmado",

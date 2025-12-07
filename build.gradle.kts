@@ -26,17 +26,11 @@ java {
     }
 }
 
-configurations {
-    compileOnly {
-        extendsFrom(configurations.annotationProcessor.get())
-    }
-}
-
 repositories { mavenCentral() }
 
-extra["springAiVersion"] = "1.0.3"
-
 dependencies {
+    // Google GenAI SDK reciente, no cambiar
+    implementation("com.google.genai:google-genai:1.29.0")
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -45,6 +39,10 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-hibernate6")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+
+    implementation("org.springframework.retry:spring-retry")
+    implementation("org.springframework:spring-aspects")
+
     // Google ID Token verification
     implementation("com.google.api-client:google-api-client:2.8.1")
     implementation("com.google.http-client:google-http-client-jackson2:1.43.3")

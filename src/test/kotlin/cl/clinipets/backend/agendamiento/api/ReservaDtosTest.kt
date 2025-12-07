@@ -1,10 +1,6 @@
 package cl.clinipets.backend.agendamiento.api
 
-import cl.clinipets.agendamiento.api.CitaResponse
-import cl.clinipets.agendamiento.api.DetalleCitaResponse
-import cl.clinipets.agendamiento.api.DetalleReservaRequest
-import cl.clinipets.agendamiento.api.ReservaCreateRequest
-import cl.clinipets.agendamiento.api.toResponse
+import cl.clinipets.agendamiento.api.*
 import cl.clinipets.agendamiento.domain.Cita
 import cl.clinipets.agendamiento.domain.DetalleCita
 import cl.clinipets.agendamiento.domain.EstadoCita
@@ -17,7 +13,7 @@ import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.UUID
+import java.util.*
 
 class ReservaDtosTest {
 
@@ -65,9 +61,13 @@ class ReservaDtosTest {
             fechaHoraFin,
             estado,
             precioFinal,
+            0, // montoAbono
+            precioFinal, // saldoPendiente
             listOf(detalleResponse),
             tutorId,
             origen,
+            cl.clinipets.agendamiento.domain.TipoAtencion.CLINICA, // tipoAtencion
+            null, // direccion
             paymentUrl
         )
 

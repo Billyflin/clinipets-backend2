@@ -1,8 +1,9 @@
 package cl.clinipets.identity.application
 
-import cl.clinipets.core.integration.N8nService
-import cl.clinipets.core.security.JwtService
+import cl.clinipets.core.config.AdminProperties
+import cl.clinipets.core.ia.VeterinaryAgentService
 import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.security.JwtService
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
@@ -12,8 +13,8 @@ import cl.clinipets.identity.api.UserUpdateRequest
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
-import org.springframework.security.crypto.password.PasswordEncoder
 import org.slf4j.LoggerFactory
+import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
@@ -24,7 +25,8 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
     private val googleTokenVerifier: GoogleTokenVerifier,
-    private val n8nService: N8nService
+    private val veterinaryAgentService: VeterinaryAgentService,
+    private val adminProperties: AdminProperties
 ) {
     private val logger = LoggerFactory.getLogger(AuthService::class.java)
 
@@ -60,10 +62,21 @@ class AuthService(
         val user = userRepository.findById(userId)
             .orElseThrow { NotFoundException("Usuario no encontrado") }
 
+        logger.info("[AUTH_SERVICE] Comparando nombres. Actual: '{}', Nuevo: '{}'", user.name, request.name)
+
         if (user.name != request.name) {
-            if (!n8nService.validarNombre(user.name, request.name)) {
+            logger.info("[AUTH_SERVICE] Cambio de nombre detectado. Solicitando validación IA...")
+
+            val esInapropiado = veterinaryAgentService.esNombreInapropiado(request.name)
+
+            logger.info("[AUTH_SERVICE] Resultado Validación IA: Inapropiado = {}", esInapropiado)
+
+            if (esInapropiado) {
+                logger.warn("[AUTH_SERVICE] Actualización rechazada por política de nombres. Nombre: {}", request.name)
                 throw BadRequestException("El nombre ingresado no cumple con las políticas de la comunidad (Validado por IA).")
             }
+        } else {
+            logger.info("[AUTH_SERVICE] El nombre no ha cambiado, saltando validación IA.")
         }
 
         user.name = request.name
@@ -71,7 +84,7 @@ class AuthService(
         user.address = request.address
 
         val updatedUser = userRepository.save(user)
-        logger.info("[AUTH_SERVICE] Perfil actualizado para: {}", updatedUser.email)
+        logger.info("[AUTH_SERVICE] Perfil actualizado exitosamente para: {}", updatedUser.email)
 
         return ProfileResponse(
             id = updatedUser.id!!,
@@ -82,6 +95,7 @@ class AuthService(
             address = updatedUser.address
         )
     }
+
 
     @Transactional
     fun loginWithGoogle(idToken: String): TokenResponse {
@@ -106,8 +120,8 @@ class AuthService(
         }
 
         // Asignar STAFF si el email coincide con el objetivo, sino CLIENT
-        val assignedRole = if (email == "billymartinezc@gmail.com" || email == "andreea.aebc@gmail.com"){
-            logger.info("[AUTH_SERVICE] Email coincide con administrador temporal, asignando rol STAFF: {}", email)
+        val assignedRole = if (adminProperties.adminEmails.contains(email)) {
+            logger.info("[AUTH_SERVICE] Email coincide con administrador configurado, asignando rol STAFF: {}", email)
             UserRole.STAFF
         } else {
             UserRole.CLIENT

@@ -39,6 +39,8 @@ services:
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN}
       N8N_API_KEY: ${N8N_API_KEY}
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+
 
       # ☢️ FIX NUCLEAR DE FECHAS (Vital para Android) ☢️
       # Esto obliga a Spring a devolver "2025-12-01T10:00:00Z" (Texto)
@@ -88,6 +90,15 @@ services:
       - sonar_extensions:/opt/sonarqube/extensions
       - sonar_logs:/opt/sonarqube/logs
     restart: unless-stopped
+
+  # 5. Cloudflare Tunnel
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: clinipets-tunnel
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    restart: unless-stopped
+    depends_on:
+      - app
 
 volumes:
   postgres-data:

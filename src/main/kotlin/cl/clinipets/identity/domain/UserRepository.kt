@@ -7,6 +7,7 @@ import java.util.UUID
 @Repository
 interface UserRepository : JpaRepository<User, UUID> {
     fun findByEmailIgnoreCase(email: String): User?
+    fun findByPhone(phone: String): User?
     fun existsByEmailIgnoreCase(email: String): Boolean
     fun findAllByRoleIn(roles: Collection<UserRole>): List<User>
 }
