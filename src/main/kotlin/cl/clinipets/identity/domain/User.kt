@@ -23,6 +23,9 @@ data class User(
     var phone: String? = null,
     var address: String? = null,
 
+    @Column(length = 1024)
+    var photoUrl: String? = null,
+
     @Column(nullable = false)
     var phoneVerified: Boolean = false,
 

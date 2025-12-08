@@ -5,11 +5,18 @@ import cl.clinipets.agendamiento.application.ReservaService
 import cl.clinipets.core.ia.tools.AgentTool
 import cl.clinipets.core.ia.tools.ToolContext
 import cl.clinipets.core.ia.tools.ToolExecutionResult
+import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
+import cl.clinipets.openapi.models.DashboardResponse
+import cl.clinipets.servicios.api.toDto
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.veterinaria.api.toResponse
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
+import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
+import com.fasterxml.jackson.module.kotlin.readValue
 import com.google.genai.types.*
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
@@ -19,6 +26,7 @@ import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Collections
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 sealed class AgentResponse {
@@ -30,6 +38,11 @@ sealed class AgentResponse {
     ) : AgentResponse()
 }
 
+private data class IaDashboardResult(
+    val mensaje: String,
+    val serviciosIds: List<String>
+)
+
 @Service
 class VeterinaryAgentService(
     private val userRepository: UserRepository,
@@ -37,6 +50,7 @@ class VeterinaryAgentService(
     private val disponibilidadService: DisponibilidadService,
     private val reservaService: ReservaService,
     private val servicioMedicoRepository: ServicioMedicoRepository,
+    private val fichaClinicaRepository: FichaClinicaRepository,
     private val clinicZoneId: ZoneId,
     private val otpService: cl.clinipets.identity.application.OtpService,
     private val client: GenAiClientWrapper,
@@ -45,6 +59,7 @@ class VeterinaryAgentService(
 ) {
     private val logger = LoggerFactory.getLogger(VeterinaryAgentService::class.java)
     private val chatHistory = ConcurrentHashMap<String, MutableList<Content>>()
+    private val mapper = jacksonObjectMapper()
 
     init {
         logger.info("[IA_INIT] Servicio Agente Veterinario listo. Modelo: $modelName. Tools cargadas: ${agentTools.size}")
@@ -399,6 +414,165 @@ class VeterinaryAgentService(
                 .parts(listOf(Part.builder().text(textoFinal).build()))
                 .build()
         )
+    }
+
+    fun generarDashboard(usuarioId: UUID): DashboardResponse {
+        val usuario = userRepository.findById(usuarioId)
+            .orElseThrow { NotFoundException("Usuario no encontrado") }
+        val mascotas = mascotaRepository.findAllByTutorId(usuarioId)
+        val fichasRecientes = mascotas.associate { mascota ->
+            val ficha = mascota.id?.let {
+                fichaClinicaRepository.findAllByMascotaIdOrderByFechaAtencionDesc(it).firstOrNull()
+            }
+            mascota.id!! to ficha
+        }
+        val serviciosActivos = servicioMedicoRepository.findByActivoTrue()
+
+        val saludo = "Hola ${usuario.name}!"
+        val resumenMascotas = if (mascotas.isEmpty()) {
+            "El usuario no tiene mascotas registradas."
+        } else {
+            mascotas.joinToString("\n") { mascota ->
+                val ficha = fichasRecientes[mascota.id!!]
+                val detalleFicha = ficha?.let {
+                    val fecha = it.fechaAtencion.atZone(clinicZoneId).toLocalDate()
+                    "Última atención ${fecha}: Diagnóstico ${it.diagnostico ?: "N/A"}, Tratamiento ${it.tratamiento ?: "N/A"}"
+                } ?: "Sin atenciones previas."
+                "- ${mascota.nombre} (${mascota.especie}). $detalleFicha"
+            }
+        }
+
+        val listaServiciosPrompt = if (serviciosActivos.isEmpty()) {
+            "Sin servicios configurados."
+        } else {
+            serviciosActivos.joinToString("\n") { "- ${it.id}: ${it.nombre} (${it.categoria})" }
+        }
+
+        val iaResult = runCatching {
+            generarDashboardConIa(
+                nombreUsuario = usuario.name,
+                resumenMascotas = resumenMascotas,
+                listaServicios = listaServiciosPrompt
+            )
+        }.getOrNull()
+
+        val mensajeIa = iaResult?.mensaje ?: "¡Bienvenido a Clinipets! Cuida a tu mejor amigo."
+        val serviciosDestacados = iaResult?.serviciosIds?.let { ids ->
+            serviciosActivos.filter { ids.contains(it.id.toString()) }
+        }.orEmpty().ifEmpty { serviciosActivos.take(2) }
+
+        return DashboardResponse(
+            saludo = saludo,
+            mensajeIa = mensajeIa,
+            mascotas = mascotas.map { it.toResponse() },
+            serviciosDestacados = serviciosDestacados.map { it.toDto() },
+            todosLosServicios = serviciosActivos.map { it.toDto() }
+        )
+    }
+
+    private fun generarDashboardConIa(
+        nombreUsuario: String,
+        resumenMascotas: String,
+        listaServicios: String
+    ): IaDashboardResult? {
+        val systemPrompt = """
+            Eres un veterinario amable de Clinipets (Chile). Responde SOLO en JSON válido con las claves:
+            {
+              "mensaje": "<texto breve y empático para el usuario>",
+              "serviciosIds": ["<uuid1>", "<uuid2>"]
+            }
+            Reglas:
+            - Usa tono cercano, positivo, y 2-3 oraciones máximo.
+            - Si hubo atención reciente, menciona a la mascota atendida o pregunta cómo sigue.
+            - Si no hay visitas recientes, recuerda control o vacunas de forma amable.
+            - serviciosIds debe contener exactamente 2 UUID de la lista entregada.
+            - No agregues texto fuera del JSON.
+        """.trimIndent()
+
+        val userPrompt = """
+            Usuario: $nombreUsuario
+            Mascotas e historial:
+            $resumenMascotas
+
+            Lista de servicios disponibles (elige 2 IDs):
+            $listaServicios
+        """.trimIndent()
+
+        val systemContent = Content.builder()
+            .role("system")
+            .parts(listOf(Part.builder().text(systemPrompt).build()))
+            .build()
+
+        val userContent = Content.builder()
+            .role("user")
+            .parts(listOf(Part.builder().text(userPrompt).build()))
+            .build()
+
+        val config = GenerateContentConfig.builder()
+            .systemInstruction(systemContent)
+            .responseMimeType("application/json")
+            .temperature(0.4f)
+            .build()
+
+        return try {
+            val response = client.generateContent(modelName, listOf(userContent), config)
+            val rawText = response.text() ?: return null
+            val parsed: Map<String, Any> = mapper.readValue(rawText)
+            val mensaje = parsed["mensaje"] as? String ?: return null
+            val serviciosIds = (parsed["serviciosIds"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+            IaDashboardResult(mensaje.trim(), serviciosIds)
+        } catch (e: Exception) {
+            logger.error("[IA_DASHBOARD] Error generando dashboard para {}", nombreUsuario, e)
+            null
+        }
+    }
+
+    fun generarResumenWhatsapp(
+        anamnesis: String,
+        diagnostico: String,
+        tratamiento: String,
+        nombreMascota: String
+    ): String {
+        val systemPrompt = """
+            Eres CliniBot, asistente de Clinipets. Escribe mensajes breves y empáticos para tutores en Chile.
+            Objetivo: entregar un cierre de atención apto para WhatsApp con emojis, en 2-3 oraciones, tono cercano y profesional.
+            Incluye recordatorio del tratamiento sin tecnicismos excesivos y firma con Clinipets.
+            No agregues advertencias legales ni formatos adicionales (solo el texto final listo para enviar).
+        """.trimIndent()
+
+        val userPrompt = """
+            Datos clínicos:
+            - Mascota: $nombreMascota
+            - Anamnesis: $anamnesis
+            - Diagnóstico: $diagnostico
+            - Tratamiento: $tratamiento
+
+            Redacta un único mensaje listo para WhatsApp para el tutor.
+        """.trimIndent()
+
+        val systemContent = Content.builder()
+            .role("system")
+            .parts(listOf(Part.builder().text(systemPrompt).build()))
+            .build()
+
+        val userContent = Content.builder()
+            .role("user")
+            .parts(listOf(Part.builder().text(userPrompt).build()))
+            .build()
+
+        val config = GenerateContentConfig.builder()
+            .systemInstruction(systemContent)
+            .temperature(0.3f)
+            .build()
+
+        return try {
+            val response = client.generateContent(modelName, listOf(userContent), config)
+            response.text()?.trim()
+                ?: "Hola! 🐾 ${nombreMascota} ya está ok. Le dejamos: $tratamiento. Si tienes dudas, escríbenos. Clinipets"
+        } catch (e: Exception) {
+            logger.error("[IA_RESUMEN] Error generando resumen para {}", nombreMascota, e)
+            "Hola! 🐾 ${nombreMascota} ya está ok. Le dejamos: $tratamiento. Si tienes dudas, escríbenos. Clinipets"
+        }
     }
 
     fun esNombreInapropiado(texto: String): Boolean {

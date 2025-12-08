@@ -62,6 +62,7 @@ class AuthService(
             email = user.email,
             name = user.name,
             role = user.role,
+            photoUrl = user.photoUrl,
             phone = user.phone,
             address = user.address,
             phoneVerified = user.phoneVerified
@@ -103,6 +104,7 @@ class AuthService(
             email = updatedUser.email,
             name = updatedUser.name,
             role = updatedUser.role,
+            photoUrl = updatedUser.photoUrl,
             phone = updatedUser.phone,
             address = updatedUser.address,
             phoneVerified = updatedUser.phoneVerified
@@ -136,6 +138,7 @@ class AuthService(
                 email = currentUser.email,
                 name = currentUser.name,
                 role = currentUser.role,
+                photoUrl = currentUser.photoUrl,
                 phone = currentUser.phone,
                 address = currentUser.address,
                 phoneVerified = currentUser.phoneVerified
@@ -181,6 +184,7 @@ class AuthService(
             email = currentUser.email,
             name = currentUser.name,
             role = currentUser.role,
+            photoUrl = currentUser.photoUrl,
             phone = currentUser.phone,
             address = currentUser.address,
             phoneVerified = currentUser.phoneVerified
@@ -208,6 +212,7 @@ class AuthService(
         } else {
             payload["name"] as? String ?: givenName ?: "Google User"
         }
+        val pictureUrl = (payload["picture"] as? String)?.takeIf { it.isNotBlank() }
 
         // Asignar STAFF si el email coincide con el objetivo, sino CLIENT
         val assignedRole = if (adminProperties.adminEmails.contains(email)) {
@@ -222,7 +227,7 @@ class AuthService(
         val userByEmail = userRepository.findByEmailIgnoreCase(email)
         val userByPhone = normalizedPhone?.let { userRepository.findByPhone(it) }
 
-        val user = when {
+        var user = when {
             userByEmail != null && userByPhone != null && userByEmail.id != userByPhone.id -> {
                 logger.info(
                     "[AUTH_SERVICE] Unificando cuentas Google+Tel. Manteniendo usuario con phone {}",
@@ -258,6 +263,7 @@ class AuthService(
                         name = name,
                         passwordHash = passwordEncoder.encode("google-${UUID.randomUUID()}"),
                         role = assignedRole,
+                        photoUrl = pictureUrl,
                         phone = normalizedPhone,
                         authProvider = AuthProvider.GOOGLE,
                         phoneVerified = normalizedPhone != null
@@ -273,6 +279,12 @@ class AuthService(
             user.role = assignedRole
             userRepository.save(user)
         }
+
+        // Actualizar foto de perfil en cada login para reflejar cambios en Google
+        if (user.photoUrl != pictureUrl) {
+            user.photoUrl = pictureUrl
+        }
+        user = userRepository.save(user)
 
         logger.info("[AUTH_SERVICE] Login exitoso para: {}", user.email)
         return issueTokens(user)

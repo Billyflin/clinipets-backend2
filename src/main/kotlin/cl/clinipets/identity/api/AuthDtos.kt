@@ -22,6 +22,7 @@ data class ProfileResponse(
     val email: String,
     val name: String,
     val role: UserRole,
+    val photoUrl: String?,
     val phone: String?,
     val address: String?,
     val phoneVerified: Boolean

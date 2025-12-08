@@ -63,35 +63,21 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-  # 3. n8n (El Orquestador)
-  n8n:
-    image: docker.n8n.io/n8nio/n8n
-    container_name: clinipets-n8n
-    ports:
-      - "5678:5678"
-    environment:
-      - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=admin
-      - N8N_BASIC_AUTH_PASSWORD=washona
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
-      - WEBHOOK_URL=http://localhost:5678/
-    volumes:
-      - n8n_data:/home/node/.n8n
-    restart: unless-stopped
 
-  # 4. SonarQube
-  sonarqube:
-    image: sonarqube:community
-    container_name: clinipets-sonar
-    ports:
-      - "9005:9000"
-    environment:
-      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
-    volumes:
-      - sonar_data:/opt/sonarqube/data
-      - sonar_extensions:/opt/sonarqube/extensions
-      - sonar_logs:/opt/sonarqube/logs
-    restart: unless-stopped
+
+  #  # 4. SonarQube
+  #  sonarqube:
+  #    image: sonarqube:community
+  #    container_name: clinipets-sonar
+  #    ports:
+  #      - "9005:9000"
+  #    environment:
+  #      - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
+  #    volumes:
+  #      - sonar_data:/opt/sonarqube/data
+  #      - sonar_extensions:/opt/sonarqube/extensions
+  #      - sonar_logs:/opt/sonarqube/logs
+  #    restart: unless-stopped
 
   # 5. Cloudflare Tunnel
   tunnel:
