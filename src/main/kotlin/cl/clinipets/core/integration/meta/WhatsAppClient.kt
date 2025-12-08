@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.http.MediaType
 import org.springframework.stereotype.Service
 import org.springframework.web.client.RestClient
+import org.springframework.web.client.RestClientResponseException
 
 @Service
 class WhatsAppClient(
@@ -98,6 +99,7 @@ class WhatsAppClient(
         val url = "https://graph.facebook.com/v17.0/${metaProperties.phoneNumberId}/messages"
 
         try {
+            logger.info("[META_SEND] Enviando request a Meta: {}", request)
             restClient.post()
                 .uri(url)
                 .header("Authorization", "Bearer ${metaProperties.accessToken}")
@@ -107,8 +109,13 @@ class WhatsAppClient(
                 .toBodilessEntity()
 
             logger.info("[META_SEND] Mensaje (${request.type}) enviado a ${request.to}")
+        } catch (e: RestClientResponseException) {
+            logger.error(
+                "[META_SEND] Error API Meta enviando mensaje a ${request.to}. Status: ${e.statusCode}, Body: ${e.responseBodyAsString}",
+                e
+            )
         } catch (e: Exception) {
-            logger.error("[META_SEND] Error enviando mensaje a ${request.to}", e)
+            logger.error("[META_SEND] Error inesperado enviando mensaje a ${request.to}", e)
         }
     }
 }

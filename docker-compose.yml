@@ -84,7 +84,7 @@ services:
     image: sonarqube:community
     container_name: clinipets-sonar
     ports:
-      - "9000:9000"
+      - "9005:9000"
     environment:
       - SONAR_ES_BOOTSTRAP_CHECKS_DISABLE=true
     volumes:
@@ -102,9 +102,25 @@ services:
     depends_on:
       - app
 
+  # 6. MinIO (S3 Compatible Storage)
+  minio:
+    image: minio/minio:latest
+    container_name: clinipets-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: clinipets_admin
+      MINIO_ROOT_PASSWORD: clinipets_secure_key
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+
 volumes:
   postgres-data:
   n8n_data:
   sonar_data:
   sonar_extensions:
   sonar_logs:
+  minio_data:

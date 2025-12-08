@@ -111,6 +111,83 @@ class AuthService(
 
 
     @Transactional
+    fun linkGoogleAccount(userId: UUID, idToken: String): ProfileResponse {
+        logger.info("[AUTH_SERVICE] Vinculando cuenta Google para usuario ID: {}", userId)
+        val payload = googleTokenVerifier.verify(idToken)
+            ?: throw UnauthorizedException("ID Token inválido")
+        val googleEmail = payload.email?.lowercase() ?: throw UnauthorizedException("ID Token sin email")
+        val emailVerified = payload.emailVerified
+
+        if (emailVerified != true) {
+            logger.warn("[AUTH_SERVICE] Email no verificado en Google: {}", googleEmail)
+            throw UnauthorizedException("Email no verificado en Google")
+        }
+
+        var currentUser = userRepository.findById(userId)
+            .orElseThrow { NotFoundException("Usuario actual no encontrado") }
+
+        // Si el usuario ya tiene este email, solo actualizamos provider si es necesario
+        if (currentUser.email.equals(googleEmail, ignoreCase = true)) {
+            logger.info("[AUTH_SERVICE] El usuario ya tiene el email {}. Actualizando provider.", googleEmail)
+            currentUser.authProvider = AuthProvider.GOOGLE
+            userRepository.save(currentUser)
+            return ProfileResponse(
+                id = currentUser.id!!,
+                email = currentUser.email,
+                name = currentUser.name,
+                role = currentUser.role,
+                phone = currentUser.phone,
+                address = currentUser.address,
+                phoneVerified = currentUser.phoneVerified
+            )
+        }
+
+        val otherUser = userRepository.findByEmailIgnoreCase(googleEmail)
+
+        if (otherUser != null) {
+            if (otherUser.id != currentUser.id) {
+                logger.info("[AUTH_SERVICE] Se encontró OTRO usuario con el email {}. Fusionando...", googleEmail)
+                // accountMergeService.mergeUsers(source = otherUser, target = currentUser)
+                // NOTA: El mergeUsers borra el source.
+                // En este caso, el usuario 'principal' es el que está logueado (currentUser).
+                // Queremos traer las cosas del 'otherUser' (que tenía el email de google) al 'currentUser'.
+                // Y borrar 'otherUser'.
+                accountMergeService.mergeUsers(source = otherUser, target = currentUser)
+            }
+        }
+
+        // Actualizar datos del currentUser con los de Google
+        currentUser.email = googleEmail
+        currentUser.authProvider = AuthProvider.GOOGLE
+
+        // Opcional: actualizar nombre si el actual es generico o vacio
+        val givenName = payload["given_name"] as? String
+        val familyName = payload["family_name"] as? String
+        val googleName = if (!givenName.isNullOrBlank() && !familyName.isNullOrBlank()) {
+            "$givenName $familyName"
+        } else {
+            payload["name"] as? String ?: givenName ?: "Google User"
+        }
+
+        if (currentUser.name.startsWith("Cliente Clinipets") || currentUser.name.isBlank()) {
+            currentUser.name = googleName
+        }
+
+        currentUser = userRepository.save(currentUser)
+        logger.info("[AUTH_SERVICE] Cuenta Google vinculada exitosamente. Nuevo email: {}", currentUser.email)
+
+        return ProfileResponse(
+            id = currentUser.id!!,
+            email = currentUser.email,
+            name = currentUser.name,
+            role = currentUser.role,
+            phone = currentUser.phone,
+            address = currentUser.address,
+            phoneVerified = currentUser.phoneVerified
+        )
+    }
+
+    @Transactional
     fun loginWithGoogle(idToken: String, rawPhone: String? = null): TokenResponse {
         logger.info("[AUTH_SERVICE] Login con Google iniciado")
         val payload = googleTokenVerifier.verify(idToken)
@@ -211,17 +288,28 @@ class AuthService(
         val normalizedPhone = otpService.normalizePhone(phone)
         val existing = userRepository.findByPhone(normalizedPhone)
 
-        val user = existing ?: userRepository.save(
-            User(
-                email = "otp_$normalizedPhone@clinipets.local",
-                name = name?.ifBlank { "Cliente Clinipets" } ?: "Cliente Clinipets",
-                passwordHash = passwordEncoder.encode("otp-${UUID.randomUUID()}"),
-                role = UserRole.CLIENT,
-                phone = normalizedPhone,
-                phoneVerified = true,
-                authProvider = AuthProvider.OTP
+        val user = if (existing != null) {
+            logger.info(
+                "[AUTH_SERVICE] Usuario existente encontrado para phone {}: ID={}, Email={}",
+                normalizedPhone,
+                existing.id,
+                existing.email
             )
-        )
+            existing
+        } else {
+            logger.info("[AUTH_SERVICE] Creando nuevo usuario para phone {}", normalizedPhone)
+            userRepository.save(
+                User(
+                    email = "otp_$normalizedPhone@clinipets.local",
+                    name = name?.ifBlank { "Cliente Clinipets" } ?: "Cliente Clinipets",
+                    passwordHash = passwordEncoder.encode("otp-${UUID.randomUUID()}"),
+                    role = UserRole.CLIENT,
+                    phone = normalizedPhone,
+                    phoneVerified = true,
+                    authProvider = AuthProvider.OTP
+                )
+            )
+        }
 
         if (user.phone != normalizedPhone) user.phone = normalizedPhone
         user.phoneVerified = true

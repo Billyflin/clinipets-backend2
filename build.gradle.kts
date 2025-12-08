@@ -50,6 +50,8 @@ dependencies {
 
     implementation("com.google.guava:guava:32.0.1-jre")
 
+    implementation("io.minio:minio:8.5.7")
+
     implementation("com.mercadopago:sdk-java:2.8.0") {
         exclude(group = "org.apache.maven.plugins", module = "maven-javadoc-plugin")
     }

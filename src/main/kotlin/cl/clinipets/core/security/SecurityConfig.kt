@@ -29,6 +29,7 @@ class SecurityConfig(
                     "/",
                     "/api/auth/refresh",
                     "/api/auth/google",
+                    "/api/auth/otp/**",
                     "/api/v1/servicios/**",
                     "/api/v1/disponibilidad/**",
                     "/api/v1/meta/webhook",
@@ -36,6 +37,7 @@ class SecurityConfig(
                     "/actuator/health",
                     "/index.html",
                     "/google-login.html",
+                    "/privacy.html",
                     "/static/**",
                     "/v3/api-docs"
                 ).permitAll()

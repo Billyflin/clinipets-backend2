@@ -43,7 +43,7 @@ class AuthController(
     @Operation(summary = "Solicitar OTP por teléfono (login/registro sin contraseña)", operationId = "requestOtp")
     @PostMapping("/otp/request")
     fun requestOtp(@Valid @RequestBody request: OtpRequest): ResponseEntity<Map<String, String>> {
-        logger.info("[OTP_REQUEST] Inicio request para {}", request.phone)
+        logger.info("[OTP_REQUEST] Inicio request. Payload: {}", request)
         authService.requestOtp(request.phone)
         return ResponseEntity.ok(mapOf("status" to "sent"))
     }
@@ -51,7 +51,7 @@ class AuthController(
     @Operation(summary = "Validar OTP y obtener tokens", operationId = "verifyOtp")
     @PostMapping("/otp/verify")
     fun verifyOtp(@Valid @RequestBody request: OtpVerifyRequest): ResponseEntity<TokenResponse> {
-        logger.info("[OTP_VERIFY] Inicio request para {}", request.phone)
+        logger.info("[OTP_VERIFY] Inicio request. Payload: {}", request)
         val response = authService.verifyOtp(request.phone, request.code, request.name)
         return ResponseEntity.ok(response)
     }
@@ -74,6 +74,18 @@ class AuthController(
         logger.info("[UPDATE_ME] Inicio request - User: {}", principal.email)
         val response = authService.updateProfile(principal.userId, request)
         logger.info("[UPDATE_ME] Fin request - Exitoso")
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Vincular cuenta de Google", operationId = "linkGoogleAccount")
+    @PostMapping("/link/google")
+    fun linkGoogleAccount(
+        @AuthenticationPrincipal principal: JwtPayload,
+        @Valid @RequestBody request: GoogleLoginRequest
+    ): ResponseEntity<ProfileResponse> {
+        logger.info("[LINK_GOOGLE] Inicio request - User: {}", principal.email)
+        val response = authService.linkGoogleAccount(principal.userId, request.idToken)
+        logger.info("[LINK_GOOGLE] Fin request - Exitoso")
         return ResponseEntity.ok(response)
     }
 }
