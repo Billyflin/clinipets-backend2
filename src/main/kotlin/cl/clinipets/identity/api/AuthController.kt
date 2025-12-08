@@ -35,8 +35,24 @@ class AuthController(
     @PostMapping("/google")
     fun google(@Valid @RequestBody request: GoogleLoginRequest): ResponseEntity<TokenResponse> {
         logger.info("[GOOGLE_LOGIN] Inicio request")
-        val response = authService.loginWithGoogle(request.idToken)
+        val response = authService.loginWithGoogle(request.idToken, request.phone)
         logger.info("[GOOGLE_LOGIN] Fin request - Exitoso")
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Solicitar OTP por teléfono (login/registro sin contraseña)", operationId = "requestOtp")
+    @PostMapping("/otp/request")
+    fun requestOtp(@Valid @RequestBody request: OtpRequest): ResponseEntity<Map<String, String>> {
+        logger.info("[OTP_REQUEST] Inicio request para {}", request.phone)
+        authService.requestOtp(request.phone)
+        return ResponseEntity.ok(mapOf("status" to "sent"))
+    }
+
+    @Operation(summary = "Validar OTP y obtener tokens", operationId = "verifyOtp")
+    @PostMapping("/otp/verify")
+    fun verifyOtp(@Valid @RequestBody request: OtpVerifyRequest): ResponseEntity<TokenResponse> {
+        logger.info("[OTP_VERIFY] Inicio request para {}", request.phone)
+        val response = authService.verifyOtp(request.phone, request.code, request.name)
         return ResponseEntity.ok(response)
     }
 

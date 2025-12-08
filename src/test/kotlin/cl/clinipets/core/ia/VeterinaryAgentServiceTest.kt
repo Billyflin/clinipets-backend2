@@ -139,7 +139,7 @@ class VeterinaryAgentServiceTest {
         whenever(disponibilidadService.obtenerSlots(eq(fechaConsulta), any())).thenReturn(listOf(slot1, slot2))
 
         // 4. Configurar Mock de Gemini (Solo Turno 1 -> Function Call)
-        val argsMap: Map<String, Any> = mapOf("fecha" to fechaStr)
+        val argsMap: Map<String, Any> = mapOf("fecha" to fechaStr, "servicio" to "Consulta General")
 
         val functionCallPart = Part.builder()
             .functionCall(
@@ -173,9 +173,10 @@ class VeterinaryAgentServiceTest {
         assert(respuesta is AgentResponse.ListOptions)
 
         val lista = respuesta as AgentResponse.ListOptions
-        assertEquals(2, lista.options.size)
+        assert(lista.options.size >= 2)
         assertEquals("Ver Horas", lista.buttonLabel)
         assert(lista.text.contains(fechaStr))
+        assert(lista.options.values.any { it == "Otra fecha" })
     }
 
     @Test
@@ -280,5 +281,56 @@ class VeterinaryAgentServiceTest {
         assert(respuesta is AgentResponse.Text)
         val texto = (respuesta as AgentResponse.Text).content
         assert(texto.contains(linkPago))
+    }
+
+    @Test
+    fun `procesarMensaje deberia ofrecer primera disponibilidad sin fecha`() {
+        val telefono = "+56912345678"
+        val userId = UUID.randomUUID()
+        val user = User(
+            id = userId,
+            name = "Juan Perez",
+            email = "juan@test.com",
+            phone = telefono,
+            passwordHash = "dummy",
+            role = UserRole.CLIENT
+        )
+        val hoy = LocalDate.now()
+        val fechaEsperada = hoy.plusDays(1)
+        val argsMap: Map<String, Any> = mapOf("servicio" to "Consulta General")
+
+        whenever(userRepository.findByPhone(any())).thenReturn(user)
+        whenever(mascotaRepository.findAllByTutorId(userId)).thenReturn(emptyList())
+        // Día 0 sin slots
+        whenever(disponibilidadService.obtenerSlots(eq(hoy), any())).thenReturn(emptyList())
+        // Día 1 con slots
+        val slot1 = fechaEsperada.atTime(9, 0).atZone(ZoneId.systemDefault()).toInstant()
+        val slot2 = fechaEsperada.atTime(9, 30).atZone(ZoneId.systemDefault()).toInstant()
+        whenever(disponibilidadService.obtenerSlots(eq(fechaEsperada), any())).thenReturn(listOf(slot1, slot2))
+
+        // Mock tool call
+        val functionCallPart = Part.builder()
+            .functionCall(
+                FunctionCall.builder()
+                    .name("buscar_primera_disponibilidad")
+                    .args(argsMap)
+                    .build()
+            )
+            .build()
+
+        val response1 = mock<GenerateContentResponse>()
+        val candidate1 = Candidate.builder()
+            .content(Content.builder().parts(listOf(functionCallPart)).role("model").build())
+            .build()
+        whenever(response1.candidates()).thenReturn(Optional.of(listOf(candidate1)))
+
+        whenever(geminiClient.generateContent(any<String>(), any<List<Content>>(), any())).thenReturn(response1)
+
+        val respuesta = agentService.procesarMensaje(telefono, "Quiero castración")
+
+        assert(respuesta is AgentResponse.ListOptions)
+        val lista = respuesta as AgentResponse.ListOptions
+        assert(lista.text.contains(fechaEsperada.toString()))
+        assert(lista.options.values.any { it == "Otra fecha" })
     }
 }

@@ -46,5 +46,5 @@ data class Mascota(
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_id", nullable = false)
-    val tutor: User
+    var tutor: User
 ) : AuditableEntity()

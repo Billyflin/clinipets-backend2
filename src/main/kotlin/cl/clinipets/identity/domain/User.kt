@@ -12,7 +12,7 @@ data class User(
     val id: UUID? = null,
 
     @Column(nullable = false, unique = true)
-    val email: String,
+    var email: String,
 
     @Column(nullable = false)
     var name: String,
@@ -22,6 +22,13 @@ data class User(
 
     var phone: String? = null,
     var address: String? = null,
+
+    @Column(nullable = false)
+    var phoneVerified: Boolean = false,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 16)
+    var authProvider: AuthProvider = AuthProvider.OTP,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)

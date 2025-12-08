@@ -13,7 +13,8 @@ data class TokenResponse(
 
 data class GoogleLoginRequest(
     @field:NotBlank(message = "El idToken es obligatorio")
-    val idToken: String
+    val idToken: String,
+    val phone: String? = null
 )
 
 data class ProfileResponse(
@@ -36,4 +37,19 @@ data class UserUpdateRequest(
 
     @field:Size(max = 255, message = "La dirección no puede exceder los 255 caracteres")
     val address: String?
+)
+
+data class OtpRequest(
+    @field:NotBlank(message = "El teléfono es obligatorio")
+    val phone: String
+)
+
+data class OtpVerifyRequest(
+    @field:NotBlank(message = "El teléfono es obligatorio")
+    val phone: String,
+
+    @field:NotBlank(message = "El código es obligatorio")
+    val code: String,
+
+    val name: String? = null
 )

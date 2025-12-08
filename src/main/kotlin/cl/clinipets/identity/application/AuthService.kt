@@ -7,16 +7,22 @@ import cl.clinipets.core.security.JwtService
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
+import cl.clinipets.core.integration.meta.MetaService
 import cl.clinipets.identity.api.ProfileResponse
 import cl.clinipets.identity.api.TokenResponse
 import cl.clinipets.identity.api.UserUpdateRequest
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
+import cl.clinipets.identity.domain.AuthProvider
+import cl.clinipets.identity.domain.OtpTokenRepository
 import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import java.time.Duration
+import java.time.Instant
+import java.time.temporal.ChronoUnit
 import java.util.*
 
 @Service
@@ -26,9 +32,15 @@ class AuthService(
     private val jwtService: JwtService,
     private val googleTokenVerifier: GoogleTokenVerifier,
     private val veterinaryAgentService: VeterinaryAgentService,
-    private val adminProperties: AdminProperties
+    private val adminProperties: AdminProperties,
+    private val otpService: OtpService,
+    private val accountMergeService: AccountMergeService,
+    private val mascotaRepository: cl.clinipets.veterinaria.domain.MascotaRepository,
+    private val otpTokenRepository: OtpTokenRepository,
+    private val metaService: MetaService
 ) {
     private val logger = LoggerFactory.getLogger(AuthService::class.java)
+    private val secureRandom = java.security.SecureRandom()
 
     @Transactional(readOnly = true)
     fun refresh(token: String?): TokenResponse {
@@ -98,7 +110,7 @@ class AuthService(
 
 
     @Transactional
-    fun loginWithGoogle(idToken: String): TokenResponse {
+    fun loginWithGoogle(idToken: String, rawPhone: String? = null): TokenResponse {
         logger.info("[AUTH_SERVICE] Login con Google iniciado")
         val payload = googleTokenVerifier.verify(idToken)
             ?: throw UnauthorizedException("ID Token inválido")
@@ -127,16 +139,53 @@ class AuthService(
             UserRole.CLIENT
         }
 
-        val user = userRepository.findByEmailIgnoreCase(email) ?: run {
-            logger.info("[AUTH_SERVICE] Creando nuevo usuario desde Google: {}", email)
-            userRepository.save(
-                User(
-                    email = email,
-                    name = name,
-                    passwordHash = passwordEncoder.encode("google-${UUID.randomUUID()}"),
-                    role = assignedRole
+        val normalizedPhone = rawPhone?.let { otpService.normalizePhone(it) }
+
+        val userByEmail = userRepository.findByEmailIgnoreCase(email)
+        val userByPhone = normalizedPhone?.let { userRepository.findByPhone(it) }
+
+        val user = when {
+            userByEmail != null && userByPhone != null && userByEmail.id != userByPhone.id -> {
+                logger.info(
+                    "[AUTH_SERVICE] Unificando cuentas Google+Tel. Manteniendo usuario con phone {}",
+                    normalizedPhone
                 )
-            )
+                val target = userByPhone.apply {
+                    this.email = email
+                    this.name = name
+                    authProvider = AuthProvider.GOOGLE
+                    phoneVerified = true
+                    if (role != assignedRole) role = assignedRole
+                }
+                userRepository.save(target)
+                accountMergeService.mergeUsers(userByEmail, target)
+            }
+
+            userByEmail != null -> userByEmail
+            userByPhone != null -> {
+                logger.info("[AUTH_SERVICE] Actualizando cuenta existente por teléfono con email Google {}", email)
+                userByPhone.email = email
+                userByPhone.name = name
+                userByPhone.authProvider = AuthProvider.GOOGLE
+                userByPhone.phoneVerified = true
+                if (userByPhone.role != assignedRole) userByPhone.role = assignedRole
+                userRepository.save(userByPhone)
+            }
+
+            else -> {
+                logger.info("[AUTH_SERVICE] Creando nuevo usuario desde Google: {}", email)
+                userRepository.save(
+                    User(
+                        email = email,
+                        name = name,
+                        passwordHash = passwordEncoder.encode("google-${UUID.randomUUID()}"),
+                        role = assignedRole,
+                        phone = normalizedPhone,
+                        authProvider = AuthProvider.GOOGLE,
+                        phoneVerified = normalizedPhone != null
+                    )
+                )
+            }
         }
 
         // Si el usuario ya existía y debe ser STAFF según el interceptor, actualizar rol si es necesario
@@ -148,6 +197,103 @@ class AuthService(
         }
 
         logger.info("[AUTH_SERVICE] Login exitoso para: {}", user.email)
+        return issueTokens(user)
+    }
+
+    fun requestOtp(phone: String) {
+        otpService.requestOtp(phone)
+    }
+
+    @Transactional
+    fun verifyOtp(phone: String, code: String, name: String? = null): TokenResponse {
+        otpService.validateOtp(phone, code)
+        val normalizedPhone = otpService.normalizePhone(phone)
+        val existing = userRepository.findByPhone(normalizedPhone)
+
+        val user = existing ?: userRepository.save(
+            User(
+                email = "otp_$normalizedPhone@clinipets.local",
+                name = name?.ifBlank { "Cliente Clinipets" } ?: "Cliente Clinipets",
+                passwordHash = passwordEncoder.encode("otp-${UUID.randomUUID()}"),
+                role = UserRole.CLIENT,
+                phone = normalizedPhone,
+                phoneVerified = true,
+                authProvider = AuthProvider.OTP
+            )
+        )
+
+        if (user.phone != normalizedPhone) user.phone = normalizedPhone
+        user.phoneVerified = true
+        user.authProvider = AuthProvider.OTP
+        userRepository.save(user)
+
+        logger.info("[AUTH_SERVICE] Login OTP exitoso para {}", normalizedPhone)
+        return issueTokens(user)
+    }
+
+    fun normalizePhone(phone: String) = otpService.normalizePhone(phone)
+
+    @Transactional
+    fun generateOtp(email: String) {
+        val user = userRepository.findByEmailIgnoreCase(email.lowercase())
+            ?: throw NotFoundException("Usuario no encontrado")
+
+        val phone = user.phone?.takeIf { it.isNotBlank() }
+            ?: throw BadRequestException("Usuario sin teléfono vinculado. No se puede enviar OTP.")
+        val phoneKey = otpService.normalizePhone(phone)
+
+        val last = otpTokenRepository.findTopByPhoneOrderByCreatedAtDesc(phoneKey)
+        if (last != null && Duration.between(last.createdAt, Instant.now()) < Duration.ofSeconds(60)) {
+            throw BadRequestException("Espera un minuto antes de pedir otro código.")
+        }
+
+        val code = String.format("%06d", secureRandom.nextInt(1_000_000))
+        otpTokenRepository.deleteByExpiresAtBefore(Instant.now())
+        otpTokenRepository.save(
+            cl.clinipets.identity.domain.OtpToken(
+                phone = phoneKey,
+                code = code,
+                purpose = "login",
+                expiresAt = Instant.now().plus(5, ChronoUnit.MINUTES),
+                attempts = 0,
+                used = false
+            )
+        )
+
+        metaService.enviarMensaje(phoneKey, "🔐 Tu código Clinipets es: *$code*")
+    }
+
+    @Transactional
+    fun validateOtp(email: String, code: String): TokenResponse {
+        val user = userRepository.findByEmailIgnoreCase(email.lowercase())
+            ?: throw NotFoundException("Usuario no encontrado")
+        val phoneKey = user.phone?.takeIf { it.isNotBlank() }?.let { otpService.normalizePhone(it) }
+            ?: throw BadRequestException("Usuario sin teléfono vinculado. No se puede validar OTP.")
+
+        val otp = otpTokenRepository.findTopByPhoneOrderByCreatedAtDesc(phoneKey)
+            ?: throw UnauthorizedException("Código inválido o expirado.")
+
+        if (otp.used || Instant.now().isAfter(otp.expiresAt)) {
+            otpTokenRepository.delete(otp)
+            throw UnauthorizedException("Código inválido o expirado.")
+        }
+
+        if (otp.attempts >= otp.maxAttempts) {
+            otp.used = true
+            otpTokenRepository.save(otp)
+            throw UnauthorizedException("Código bloqueado por seguridad. Genera uno nuevo.")
+        }
+
+        if (otp.code != code) {
+            otp.attempts += 1
+            otpTokenRepository.save(otp)
+            val remaining = (otp.maxAttempts - otp.attempts).coerceAtLeast(0)
+            throw BadRequestException("Código incorrecto. Quedan $remaining intentos.")
+        }
+
+        otp.used = true
+        otpTokenRepository.save(otp)
+
         return issueTokens(user)
     }
 
