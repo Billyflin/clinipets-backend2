@@ -5,9 +5,11 @@ import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.DeleteMapping
 import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.PatchMapping
 import org.springframework.web.bind.annotation.PathVariable
 import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.PutMapping
@@ -69,6 +71,19 @@ class MascotaController(
         logger.info("[ACTUALIZAR_MASCOTA] Inicio request. ID: {}, Tutor: {}", id, principal.email)
         val response = mascotaService.actualizar(id, request, principal)
         logger.info("[ACTUALIZAR_MASCOTA] Fin request - Exitoso")
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Actualizar datos clínicos (Staff/Admin)", operationId = "actualizarDatosClinicos")
+    @PatchMapping("/{id}/clinico")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    fun actualizarDatosClinicos(
+        @PathVariable id: UUID,
+        @RequestBody request: MascotaClinicalUpdateRequest
+    ): ResponseEntity<MascotaResponse> {
+        logger.info("[ACTUALIZAR_CLINICO] Inicio request. ID: {}", id)
+        val response = mascotaService.actualizarDatosClinicos(id, request)
+        logger.info("[ACTUALIZAR_CLINICO] Fin request - Exitoso")
         return ResponseEntity.ok(response)
     }
 

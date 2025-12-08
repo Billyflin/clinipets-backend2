@@ -3,10 +3,7 @@ package cl.clinipets.core.config
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
-import cl.clinipets.servicios.domain.CategoriaServicio
-import cl.clinipets.servicios.domain.ReglaPrecio
-import cl.clinipets.servicios.domain.ServicioMedico
-import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.servicios.domain.*
 import cl.clinipets.veterinaria.domain.Especie
 import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
@@ -24,59 +21,256 @@ import java.time.LocalDate
 class DataSeeder(
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val userRepository: UserRepository,
-    private val mascotaRepository: MascotaRepository
+    private val mascotaRepository: MascotaRepository,
+    private val promocionRepository: PromocionRepository
 ) : ApplicationRunner {
     @Transactional
     override fun run(args: ApplicationArguments?) {
         seedServices()
+        seedPromociones()
         seedUsersAndPets()
+        configurarReglasYDependencias()
     }
 
     private fun seedServices() {
-        // Definimos los servicios requeridos con sus duraciones
+        // --- CONSULTAS ---
         crearOActualizarServicio(
-            nombre = "Consulta General",
+            nombre = "Consulta Médica Primaria",
             duracion = 30,
             categoria = CategoriaServicio.CONSULTA,
-            precioBase = 15000,
-            precioAbono = 3000
+            precioBase = 8000,
+            precioAbono = 4000
+        )
+        crearOActualizarServicio(
+            nombre = "Corte de uñas",
+            duracion = 15,
+            categoria = CategoriaServicio.CONSULTA,
+            precioBase = 5000,
+            precioAbono = 2500
         )
 
+        // --- CHIP ---
         crearOActualizarServicio(
-            nombre = "Vacuna Octuple",
+            nombre = "Implantación Microchip",
+            duracion = 15,
+            categoria = CategoriaServicio.OTRO,
+            precioBase = 15000,
+            precioAbono = 5000,
+            especies = mutableSetOf(Especie.PERRO, Especie.GATO)
+        )
+
+        // --- EXAMENES ---
+        crearOActualizarServicio(
+            nombre = "Test Rápido Leucemia/VIF (Retroviral)",
+            duracion = 15,
+            categoria = CategoriaServicio.OTRO, // Mapeado a OTRO temporalmente si no existe EXAMEN en enum
+            precioBase = 25000,
+            precioAbono = 10000,
+            especies = mutableSetOf(Especie.GATO)
+        )
+
+        // --- VACUNAS ---
+        crearOActualizarServicio(
+            nombre = "Vacuna Triple Felina",
+            duracion = 15,
+            categoria = CategoriaServicio.VACUNA,
+            precioBase = 14000,
+            precioAbono = 4000,
+            especies = mutableSetOf(Especie.GATO)
+        )
+        crearOActualizarServicio(
+            nombre = "Vacuna Leucemia Felina",
+            duracion = 15,
+            categoria = CategoriaServicio.VACUNA,
+            precioBase = 14000,
+            precioAbono = 4000,
+            especies = mutableSetOf(Especie.GATO)
+        )
+        crearOActualizarServicio(
+            nombre = "Vacuna Séxtuple",
             duracion = 15,
             categoria = CategoriaServicio.VACUNA,
             precioBase = 12000,
-            precioAbono = 2000,
-            stock = 100
-        )
-
-        crearOActualizarServicio(
-            nombre = "Esterilización Canina",
-            duracion = 60,
-            categoria = CategoriaServicio.CIRUGIA,
-            precioBase = 45000,
-            precioAbono = 5000,
-            requierePeso = true,
+            precioAbono = 4000,
             especies = mutableSetOf(Especie.PERRO)
         )
-
         crearOActualizarServicio(
-            nombre = "Peluquería",
-            duracion = 90,
-            categoria = CategoriaServicio.OTRO,
-            precioBase = 25000,
-            precioAbono = 5000
-        )
-
-        // Servicio Dummy para pruebas de pago mínimas
-        crearOActualizarServicio(
-            nombre = "Test Flujo Pagos",
+            nombre = "Vacuna KC (Tos de las perreras)",
             duracion = 15,
-            categoria = CategoriaServicio.OTRO,
-            precioBase = 10,
-            precioAbono = 5
+            categoria = CategoriaServicio.VACUNA,
+            precioBase = 14000,
+            precioAbono = 4000,
+            especies = mutableSetOf(Especie.PERRO)
         )
+        crearOActualizarServicio(
+            nombre = "Vacuna Antirrábica",
+            duracion = 15,
+            categoria = CategoriaServicio.VACUNA,
+            precioBase = 12000,
+            precioAbono = 4000,
+            especies = mutableSetOf(Especie.PERRO, Especie.GATO)
+        )
+
+        // --- CIRUGIAS ---
+        crearOActualizarServicio(
+            nombre = "Esterilización Felina Macho",
+            duracion = 60,
+            categoria = CategoriaServicio.CIRUGIA,
+            precioBase = 25000,
+            precioAbono = 10000,
+            especies = mutableSetOf(Especie.GATO)
+        )
+        crearOActualizarServicio(
+            nombre = "Esterilización Felina Hembra",
+            duracion = 90,
+            categoria = CategoriaServicio.CIRUGIA,
+            precioBase = 30000,
+            precioAbono = 10000,
+            especies = mutableSetOf(Especie.GATO)
+        )
+
+        // --- CIRUGIA COMPLEJA CON REGLAS DE PESO ---
+        seedEsterilizacionCanina()
+    }
+
+    private fun configurarReglasYDependencias() {
+        val servicios = servicioMedicoRepository.findAll()
+        val mapServicios = servicios.associateBy { it.nombre.lowercase() }
+
+        // 1. Configurar dependencia de Vacuna Leucemia -> Test Retroviral
+        val vacunaLeucemia = mapServicios["vacuna leucemia felina"]
+        val testRetroviral = mapServicios["test rápido leucemia/vif (retroviral)"]
+
+        if (vacunaLeucemia != null && testRetroviral != null) {
+            if (!vacunaLeucemia.serviciosRequeridosIds.contains(testRetroviral.id!!)) {
+                vacunaLeucemia.serviciosRequeridosIds.add(testRetroviral.id!!)
+                servicioMedicoRepository.save(vacunaLeucemia)
+            }
+        }
+
+        // 2. Configurar bloqueadoSiEsterilizado
+        val serviciosEsterilizacion = listOf(
+            "esterilización canina",
+            "esterilización felina macho",
+            "esterilización felina hembra"
+        )
+
+        serviciosEsterilizacion.forEach { nombre ->
+            mapServicios[nombre]?.let {
+                if (!it.bloqueadoSiEsterilizado) {
+                    it.bloqueadoSiEsterilizado = true
+                    servicioMedicoRepository.save(it)
+                }
+            }
+        }
+    }
+
+    private fun seedEsterilizacionCanina() {
+        val nombre = "Esterilización Canina"
+        val existente = servicioMedicoRepository.findAll().find { it.nombre.equals(nombre, ignoreCase = true) }
+
+        if (existente == null) {
+            val servicio = ServicioMedico(
+                nombre = nombre,
+                precioBase = 30000, // Precio base (0-10kg)
+                precioAbono = 10000,
+                requierePeso = true,
+                duracionMinutos = 90,
+                activo = true,
+                categoria = CategoriaServicio.CIRUGIA,
+                especiesPermitidas = mutableSetOf(Especie.PERRO)
+            )
+
+            servicio.reglas.addAll(
+                listOf(
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("0.0"),
+                        pesoMax = BigDecimal("10.0"),
+                        precio = 30000
+                    ),
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("10.1"),
+                        pesoMax = BigDecimal("15.0"),
+                        precio = 34000
+                    ),
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("15.1"),
+                        pesoMax = BigDecimal("20.0"),
+                        precio = 38000
+                    ),
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("20.1"),
+                        pesoMax = BigDecimal("25.0"),
+                        precio = 42000
+                    ),
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("25.1"),
+                        pesoMax = BigDecimal("30.0"),
+                        precio = 46000
+                    ),
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("30.1"),
+                        pesoMax = BigDecimal("35.0"),
+                        precio = 50000
+                    ),
+                    ReglaPrecio(
+                        servicio = servicio,
+                        pesoMin = BigDecimal("35.1"),
+                        pesoMax = BigDecimal("40.0"),
+                        precio = 54000
+                    )
+                )
+            )
+            servicioMedicoRepository.save(servicio)
+        }
+    }
+
+    private fun seedPromociones() {
+        val nombrePromo = "Pack Cirugía + Microchip"
+
+        // Verificar si ya existe para no duplicar
+        val promos = promocionRepository.findAll()
+        if (promos.any { it.nombre.equals(nombrePromo, ignoreCase = true) }) return
+
+        // Buscar servicios
+        val servicios = servicioMedicoRepository.findAll()
+        val cirugia = servicios.find { it.nombre.contains("Esterilización Canina", ignoreCase = true) }
+        val chip = servicios.find { it.nombre.contains("Microchip", ignoreCase = true) }
+
+        if (cirugia != null && chip != null) {
+            val promocion = Promocion(
+                nombre = nombrePromo,
+                descripcion = "Descuento al agendar esterilización canina junto con implantación de microchip fines de semana.",
+                fechaInicio = LocalDate.now(),
+                fechaFin = LocalDate.now().plusYears(1),
+                diasPermitidos = "SAT,SUN",
+                activa = true,
+                serviciosTriggerIds = mutableSetOf(cirugia.id!!, chip.id!!)
+            )
+
+            promocion.beneficios.add(
+                PromocionBeneficio(
+                    servicioId = cirugia.id!!,
+                    tipo = TipoDescuento.MONTO_OFF,
+                    valor = BigDecimal(2000)
+                )
+            )
+            promocion.beneficios.add(
+                PromocionBeneficio(
+                    servicioId = chip.id!!,
+                    tipo = TipoDescuento.MONTO_OFF,
+                    valor = BigDecimal(2000)
+                )
+            )
+
+            promocionRepository.save(promocion)
+        }
     }
 
     private fun crearOActualizarServicio(
@@ -92,9 +286,13 @@ class DataSeeder(
         val existente = servicioMedicoRepository.findAll().find { it.nombre.equals(nombre, ignoreCase = true) }
 
         if (existente != null) {
-            // Actualizar si es necesario
             existente.duracionMinutos = duracion
             existente.categoria = categoria
+            existente.precioBase = precioBase
+            existente.precioAbono = precioAbono
+            if (especies.isNotEmpty()) {
+                existente.especiesPermitidas = especies
+            }
             servicioMedicoRepository.save(existente)
         } else {
             val servicio = ServicioMedico(
@@ -108,7 +306,7 @@ class DataSeeder(
                 especiesPermitidas = especies,
                 stock = stock
             )
-            // Reglas básicas para servicios con peso (ejemplo simplificado)
+            // Regla por defecto para servicios simples
             if (requierePeso) {
                 servicio.reglas.add(
                     ReglaPrecio(
@@ -140,7 +338,6 @@ class DataSeeder(
             user = userRepository.save(user)
         }
 
-        // Asegurar mascota para pruebas de reserva
         val mascotas = mascotaRepository.findAllByTutorId(user!!.id!!)
         if (mascotas.isEmpty()) {
             val firulais = Mascota(

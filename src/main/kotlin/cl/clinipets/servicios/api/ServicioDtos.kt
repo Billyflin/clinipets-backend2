@@ -25,6 +25,8 @@ data class ServicioMedicoDto(
     val categoria: CategoriaServicio,
     val especiesPermitidas: Set<Especie>,
     val stock: Int?,
+    val bloqueadoSiEsterilizado: Boolean,
+    val serviciosRequeridosIds: Set<UUID>,
     val reglas: List<ReglaPrecioDto>
 )
 
@@ -39,6 +41,8 @@ fun ServicioMedico.toDto() = ServicioMedicoDto(
     categoria = categoria,
     especiesPermitidas = especiesPermitidas,
     stock = stock,
+    bloqueadoSiEsterilizado = bloqueadoSiEsterilizado,
+    serviciosRequeridosIds = serviciosRequeridosIds,
     reglas = reglas.map(ReglaPrecio::toDto)
 )
 

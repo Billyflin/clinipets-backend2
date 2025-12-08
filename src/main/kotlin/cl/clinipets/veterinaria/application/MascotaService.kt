@@ -1,5 +1,6 @@
 package cl.clinipets.veterinaria.application
 
+import cl.clinipets.veterinaria.api.MascotaClinicalUpdateRequest
 import cl.clinipets.veterinaria.api.MascotaCreateRequest
 import cl.clinipets.veterinaria.api.MascotaResponse
 import cl.clinipets.veterinaria.api.MascotaUpdateRequest
@@ -72,6 +73,32 @@ class MascotaService(
         
         val updated = mascotaRepository.save(mascota)
         logger.info("[MASCOTA_SERVICE] Mascota actualizada exitosamente")
+        return updated.toResponse()
+    }
+
+    @Transactional
+    fun actualizarDatosClinicos(id: UUID, request: MascotaClinicalUpdateRequest): MascotaResponse {
+        logger.info("[MASCOTA_CLINICO] Actualizando datos clínicos mascota ID: {}", id)
+
+        // No pasamos JwtPayload porque asumimos que la autorización ya fue validada en el Controller (Role STAFF/ADMIN)
+        // y este método es de uso interno para la clínica.
+        val mascota = mascotaRepository.findById(id)
+            .orElseThrow { NotFoundException("Mascota no encontrada") }
+
+        request.pesoActual?.let { mascota.pesoActual = it }
+        request.esterilizado?.let { mascota.esterilizado = it }
+
+        request.testRetroviralNegativo?.let {
+            mascota.testRetroviralNegativo = it
+            if (it) {
+                mascota.fechaUltimoTestRetroviral = LocalDate.now()
+            }
+        }
+
+        request.observaciones?.let { mascota.observacionesClinicas = it }
+
+        val updated = mascotaRepository.save(mascota)
+        logger.info("[MASCOTA_CLINICO] Datos clínicos actualizados exitosamente")
         return updated.toResponse()
     }
 

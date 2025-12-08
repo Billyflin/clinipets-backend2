@@ -23,7 +23,8 @@ data class ProfileResponse(
     val name: String,
     val role: UserRole,
     val phone: String?,
-    val address: String?
+    val address: String?,
+    val phoneVerified: Boolean
 )
 
 data class UserUpdateRequest(

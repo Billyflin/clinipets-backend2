@@ -21,6 +21,7 @@ import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.pagos.application.EstadoPagoMP
 import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.application.InventarioService
+import cl.clinipets.servicios.application.PromoEngineService
 import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
@@ -44,6 +45,7 @@ class ReservaService(
     private val pagoService: PagoService,
     private val notificationService: NotificationService,
     private val inventarioService: InventarioService,
+    private val promoEngineService: PromoEngineService,
     private val userRepository: UserRepository,
     private val clinicZoneId: ZoneId
 ) {
@@ -102,6 +104,11 @@ class ReservaService(
              throw BadRequestException("Debe especificar una dirección para atención a domicilio")
         }
 
+        // --- PROMOCIONES ---
+        val fechaCita = fechaHoraInicio.atZone(clinicZoneId).toLocalDate()
+        val mapaDescuentos = promoEngineService.calcularDescuentos(detallesRequest, fechaCita)
+        // -------------------
+
         var totalPrecio = 0
         val abonos = mutableListOf<Int>()
         var duracionTotalMinutos = 0L
@@ -126,10 +133,12 @@ class ReservaService(
             inventarioService.consumirStock(servicio.id!!)
 
             var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
+
+            // --- CÁLCULO DE PRECIO BASE ---
+            // Primero obtenemos el precio base o calculado por reglas de dominio (peso, etc)
             var precioItem = servicio.precioBase
 
             if (servicio.categoria == CategoriaServicio.PRODUCTO) {
-                // Products don't necessarily need a pet, but if provided, check owner
                 if (req.mascotaId != null) {
                     mascota = mascotaRepository.findById(req.mascotaId)
                         .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
@@ -137,7 +146,6 @@ class ReservaService(
                 }
                 duracionTotalMinutos += servicio.duracionMinutos
             } else {
-                // Services usually require a pet
                 if (req.mascotaId == null) throw BadRequestException("El servicio ${servicio.nombre} requiere especificar una mascota")
 
                 mascota = mascotaRepository.findById(req.mascotaId)
@@ -145,9 +153,64 @@ class ReservaService(
 
                 if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
 
-                // Delegate price calculation to Domain Entity
+                // --- VALIDACIONES DE NEGOCIO Y CLÍNICAS ---
+
+                // 1. Validación de Esterilización
+                if (servicio.bloqueadoSiEsterilizado && mascota.esterilizado) {
+                    throw BadRequestException("La mascota ${mascota.nombre} ya está esterilizada. No puede realizarse '${servicio.nombre}'.")
+                }
+
+                // 2. Validación de Dependencias Inteligente
+                if (servicio.serviciosRequeridosIds.isNotEmpty()) {
+                    val idsEnCarrito = detallesRequest.map { it.servicioId }.toSet()
+
+                    servicio.serviciosRequeridosIds.forEach { reqId ->
+                        if (!idsEnCarrito.contains(reqId)) {
+                            // No está en el carrito. Verificamos condición clínica.
+                            val servicioReq = servicioMedicoRepository.findById(reqId).orElse(null)
+                            var cumpleClinicamente = false
+
+                            if (servicioReq != null) {
+                                // Lógica específica para Test Retroviral (por nombre para robustez si cambia ID)
+                                if (servicioReq.nombre.contains("Retroviral", ignoreCase = true) ||
+                                    servicioReq.nombre.contains("Leucemia", ignoreCase = true)
+                                ) {
+
+                                    if (mascota.testRetroviralNegativo) {
+                                        cumpleClinicamente = true
+                                        logger.info(">>> [VALIDACION] Dependencia '${servicioReq.nombre}' satisfecha por historial clínico (Negativo).")
+                                    }
+                                }
+                            }
+
+                            if (!cumpleClinicamente) {
+                                val nombreReq = servicioReq?.nombre ?: "Servicio Requerido"
+                                throw BadRequestException("El servicio '${servicio.nombre}' requiere que agregues también: '$nombreReq' (o que la mascota ya cumpla el requisito clínico).")
+                            }
+                        }
+                    }
+                }
+                // ------------------------------------------
+
                 precioItem = servicio.calcularPrecioPara(mascota)
                 duracionTotalMinutos += servicio.duracionMinutos
+            }
+
+            // --- APLICACIÓN DE PROMOCIONES ---
+            // Verificamos si el motor de promociones calculó un precio diferente
+            val detallePromo = mapaDescuentos[servicio.id]
+            if (detallePromo != null && detallePromo.precioFinal != detallePromo.precioOriginal) {
+                // Si el precio original calculado por el motor (que usa precioBase) difiere del precioItem (calculado por peso),
+                // debemos tener cuidado.
+                // ESTRATEGIA: Si el motor reporta un descuento, aplicamos ese delta sobre el precioItem real.
+                // Delta = PrecioOriginalMotor - PrecioFinalMotor
+                val descuento = detallePromo.precioOriginal - detallePromo.precioFinal
+                if (descuento > 0) {
+                    val precioAntiguo = precioItem
+                    precioItem -= descuento
+                    if (precioItem < 0) precioItem = 0
+                    logger.info(">>> [PROMO] Aplicando descuento a ${servicio.nombre}: de $$precioAntiguo a $$precioItem. (${detallePromo.notas.joinToString()})")
+                }
             }
 
             // Abono logic: Collect deposits. If null (e.g. products), use 0.

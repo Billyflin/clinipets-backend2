@@ -46,5 +46,14 @@ data class Mascota(
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_id", nullable = false)
-    var tutor: User
+    var tutor: User,
+
+    @Column(nullable = false)
+    var testRetroviralNegativo: Boolean = false,
+
+    @Column(nullable = true)
+    var fechaUltimoTestRetroviral: LocalDate? = null,
+
+    @Column(nullable = true, length = 2000)
+    var observacionesClinicas: String? = null
 ) : AuditableEntity()

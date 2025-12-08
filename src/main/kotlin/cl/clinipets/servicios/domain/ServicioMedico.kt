@@ -17,22 +17,22 @@ data class ServicioMedico(
     var version: Long? = null,
 
     @Column(nullable = false, unique = true)
-    val nombre: String,
+    var nombre: String,
 
     @Column(nullable = false)
-    val precioBase: Int,
+    var precioBase: Int,
 
     @Column(nullable = true)
-    val precioAbono: Int? = null,
+    var precioAbono: Int? = null,
 
     @Column(nullable = false)
-    val requierePeso: Boolean,
+    var requierePeso: Boolean,
 
     @Column(nullable = false)
     var duracionMinutos: Int,
 
     @Column(nullable = false)
-    val activo: Boolean = true,
+    var activo: Boolean = true,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
@@ -46,6 +46,14 @@ data class ServicioMedico(
 
     @Column(nullable = true)
     var stock: Int? = null,
+
+    @Column(nullable = false)
+    var bloqueadoSiEsterilizado: Boolean = false,
+
+    @ElementCollection(fetch = FetchType.EAGER)
+    @CollectionTable(name = "servicio_dependencias", joinColumns = [JoinColumn(name = "servicio_id")])
+    @Column(name = "servicio_requerido_id")
+    var serviciosRequeridosIds: MutableSet<UUID> = mutableSetOf(),
 
     @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
     val reglas: MutableList<ReglaPrecio> = mutableListOf()

@@ -63,7 +63,8 @@ class AuthService(
             name = user.name,
             role = user.role,
             phone = user.phone,
-            address = user.address
+            address = user.address,
+            phoneVerified = user.phoneVerified
         )
     }
 
@@ -103,7 +104,8 @@ class AuthService(
             name = updatedUser.name,
             role = updatedUser.role,
             phone = updatedUser.phone,
-            address = updatedUser.address
+            address = updatedUser.address,
+            phoneVerified = updatedUser.phoneVerified
         )
     }
 

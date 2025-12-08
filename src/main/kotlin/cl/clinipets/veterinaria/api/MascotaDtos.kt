@@ -6,7 +6,6 @@ import cl.clinipets.veterinaria.domain.Sexo
 import cl.clinipets.veterinaria.domain.Temperamento
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
-import jakarta.validation.constraints.PastOrPresent
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.UUID
@@ -39,6 +38,13 @@ data class MascotaUpdateRequest(
     val temperamento: Temperamento?
 )
 
+data class MascotaClinicalUpdateRequest(
+    val pesoActual: BigDecimal?,
+    val esterilizado: Boolean?,
+    val testRetroviralNegativo: Boolean?,
+    val observaciones: String?
+)
+
 data class MascotaResponse(
     val id: UUID,
     val nombre: String,
@@ -50,7 +56,10 @@ data class MascotaResponse(
     val temperamento: Temperamento,
     val pesoActual: BigDecimal,
     val fechaNacimiento: LocalDate,
-    val tutorId: UUID
+    val tutorId: UUID,
+    val testRetroviralNegativo: Boolean,
+    val fechaUltimoTestRetroviral: LocalDate?,
+    val observacionesClinicas: String?
 )
 
 fun Mascota.toResponse() = MascotaResponse(
@@ -64,5 +73,8 @@ fun Mascota.toResponse() = MascotaResponse(
     temperamento = temperamento,
     pesoActual = pesoActual,
     fechaNacimiento = fechaNacimiento,
-    tutorId = tutor.id!!
+    tutorId = tutor.id!!,
+    testRetroviralNegativo = testRetroviralNegativo,
+    fechaUltimoTestRetroviral = fechaUltimoTestRetroviral,
+    observacionesClinicas = observacionesClinicas
 )
