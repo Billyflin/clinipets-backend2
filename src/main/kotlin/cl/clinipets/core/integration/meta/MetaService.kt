@@ -1,22 +1,22 @@
 package cl.clinipets.core.integration.meta
 
-import cl.clinipets.core.config.MetaProperties
+import cl.clinipets.core.ia.AgentResponse
 import cl.clinipets.core.ia.VeterinaryAgentService
-import cl.clinipets.core.integration.meta.dto.*
+import cl.clinipets.core.integration.meta.dto.WebhookObject
+import cl.clinipets.identity.application.OtpService
+import cl.clinipets.identity.domain.UserRepository
 import org.slf4j.LoggerFactory
-import org.springframework.http.MediaType
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
-import org.springframework.web.client.RestClient
 
 @Service
 class MetaService(
-    private val metaProperties: MetaProperties,
     private val veterinaryAgentService: VeterinaryAgentService,
-    restClientBuilder: RestClient.Builder
+    private val whatsAppClient: WhatsAppClient,
+    private val otpService: OtpService,
+    private val userRepository: UserRepository
 ) {
     private val logger = LoggerFactory.getLogger(MetaService::class.java)
-    private val restClient = restClientBuilder.build()
 
     @Async
     fun processWebhook(payload: WebhookObject) {
@@ -63,28 +63,40 @@ class MetaService(
     }
 
     private fun procesarYResponder(userPhone: String, userMessage: String) {
-        // Llamar al Agente IA
+        val msgTrimmed = userMessage.trim()
+
+        // 1. FAST-PATH: Detección de OTP (6 dígitos exactos)
+        // Usamos all { it.isDigit() } para evitar problemas con regex y escapar caracteres.
+        if (msgTrimmed.length == 6 && msgTrimmed.all { it.isDigit() }) {
+            manejarOtpDirecto(userPhone, msgTrimmed)
+            return
+        }
+
+        // 2. Flujo Normal: Llamar al Agente IA
         val respuestaIa = veterinaryAgentService.procesarMensaje(userPhone, userMessage)
         logger.warn("[DEBUG_PAGO] MetaService recibió respuesta del Agente: {}", respuestaIa)
 
         // Responder al usuario según tipo
         when (respuestaIa) {
-            is cl.clinipets.core.ia.AgentResponse.Text -> {
+            is AgentResponse.Text -> {
                 logger.warn(
                     "[DEBUG_PAGO] Es tipo Texto. Content: '{}', PaymentURL: '{}'",
                     respuestaIa.content,
                     respuestaIa.paymentUrl
                 )
-                enviarMensaje(userPhone, respuestaIa.content)
+                whatsAppClient.enviarMensaje(userPhone, respuestaIa.content)
                 val paymentUrl = respuestaIa.paymentUrl
                 if (paymentUrl != null) {
                     logger.warn("[DEBUG_PAGO] Intentando enviar mensaje extra con link...")
-                    enviarMensaje(userPhone, "Para confirmar tu cita, realiza el abono aquí: $paymentUrl")
+                    whatsAppClient.enviarMensaje(
+                        userPhone,
+                        "Para confirmar tu cita, realiza el abono aquí: $paymentUrl"
+                    )
                 }
             }
 
-            is cl.clinipets.core.ia.AgentResponse.ListOptions -> {
-                enviarLista(
+            is AgentResponse.ListOptions -> {
+                whatsAppClient.enviarLista(
                     destinatario = userPhone,
                     texto = respuestaIa.text,
                     botonMenu = respuestaIa.buttonLabel,
@@ -94,100 +106,31 @@ class MetaService(
         }
     }
 
-    /**
-     * Envia un mensaje de texto simple.
-     */
-    fun enviarMensaje(destinatario: String, texto: String) {
-        val request = WhatsAppMessageReq(
-            to = destinatario,
-            type = "text",
-            text = TextContent(body = texto)
-        )
-        enviarRequest(request)
-    }
-
-    /**
-     * Envia mensaje con botones (máximo 3).
-     */
-    fun enviarBotones(destinatario: String, texto: String, opciones: Map<String, String>) {
-        // Validar máximo 3 botones
-        val botonesSafe = opciones.entries.take(3).map { (id, titulo) ->
-            InteractiveButton(
-                reply = InteractiveButtonReply(
-                    id = id,
-                    title = titulo.take(20) // Meta limita titulos de botones a 20 chars
-                )
-            )
-        }
-
-        val interactive = InteractiveContent(
-            type = "button",
-            body = InteractiveBody(text = texto),
-            action = InteractiveAction(buttons = botonesSafe)
-        )
-
-        val request = WhatsAppMessageReq(
-            to = destinatario,
-            type = "interactive",
-            interactive = interactive
-        )
-        enviarRequest(request)
-    }
-
-    /**
-     * Envia mensaje tipo lista (máximo 10 opciones).
-     */
-    fun enviarLista(destinatario: String, texto: String, botonMenu: String, opciones: Map<String, String>) {
-        // Validar máximo 10 opciones
-        val filas = opciones.entries.take(10).map { (id, titulo) ->
-            InteractiveRow(
-                id = id,
-                title = titulo.take(24) // Meta limita titulos de lista a 24 chars
-            )
-        }
-
-        val seccion = InteractiveSection(
-            title = "Opciones",
-            rows = filas
-        )
-
-        val interactive = InteractiveContent(
-            type = "list",
-            body = InteractiveBody(text = texto),
-            action = InteractiveAction(
-                button = botonMenu.take(20),
-                sections = listOf(seccion)
-            )
-        )
-
-        val request = WhatsAppMessageReq(
-            to = destinatario,
-            type = "interactive",
-            interactive = interactive
-        )
-        enviarRequest(request)
-    }
-
-    private fun enviarRequest(request: WhatsAppMessageReq) {
-        if (metaProperties.phoneNumberId.isBlank() || metaProperties.accessToken.isBlank()) {
-            logger.warn("[META_SEND] Credenciales de Meta no configuradas. No se envió mensaje a ${request.to}.")
-            return
-        }
-
-        val url = "https://graph.facebook.com/v17.0/${metaProperties.phoneNumberId}/messages"
-
+    private fun manejarOtpDirecto(telefono: String, codigo: String) {
+        logger.info("[META_OTP] Detectado posible código OTP ($codigo) para $telefono. Procesando directamente.")
         try {
-            restClient.post()
-                .uri(url)
-                .header("Authorization", "Bearer ${metaProperties.accessToken}")
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(request)
-                .retrieve()
-                .toBodilessEntity()
+            otpService.validateOtp(telefono, codigo)
 
-            logger.info("[META_SEND] Mensaje (${request.type}) enviado a ${request.to}")
+            // Actualizar estado verificado del usuario
+            val normalized = otpService.normalizePhone(telefono)
+            userRepository.findByPhone(normalized)?.let {
+                it.phoneVerified = true
+                userRepository.save(it)
+            }
+
+            whatsAppClient.enviarMensaje(
+                telefono,
+                "✅ ¡Código verificado correctamente! Tu teléfono ha sido autenticado."
+            )
         } catch (e: Exception) {
-            logger.error("[META_SEND] Error enviando mensaje a ${request.to}", e)
+            logger.warn("[META_OTP] Falló validación directa de OTP: ${e.message}")
+            // Mensaje amigable de error
+            val msgError = if (e.message?.contains("intentos") == true) {
+                "❌ ${e.message}"
+            } else {
+                "❌ Código incorrecto o expirado. Por favor intenta solicitar uno nuevo."
+            }
+            whatsAppClient.enviarMensaje(telefono, msgError)
         }
     }
 }

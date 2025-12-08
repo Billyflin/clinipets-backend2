@@ -1,29 +1,23 @@
 package cl.clinipets.core.ia
 
-import cl.clinipets.agendamiento.api.DetalleReservaRequest
+import cl.clinipets.agendamiento.application.DisponibilidadService
 import cl.clinipets.agendamiento.application.ReservaService
-import cl.clinipets.agendamiento.domain.OrigenCita
-import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.ia.tools.AgentTool
+import cl.clinipets.core.ia.tools.ToolContext
+import cl.clinipets.core.ia.tools.ToolExecutionResult
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
-import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
-import cl.clinipets.veterinaria.domain.Especie
-import cl.clinipets.veterinaria.domain.Mascota
-import cl.clinipets.veterinaria.domain.Sexo
 import com.google.genai.types.*
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Service
-import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
-import java.time.LocalDateTime
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.temporal.ChronoUnit
 import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 
@@ -40,19 +34,20 @@ sealed class AgentResponse {
 class VeterinaryAgentService(
     private val userRepository: UserRepository,
     private val mascotaRepository: MascotaRepository,
-    private val disponibilidadService: cl.clinipets.agendamiento.application.DisponibilidadService,
+    private val disponibilidadService: DisponibilidadService,
     private val reservaService: ReservaService,
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val clinicZoneId: ZoneId,
     private val otpService: cl.clinipets.identity.application.OtpService,
     private val client: GenAiClientWrapper,
-    @Value("\${gemini.model:gemini-2.0-flash-lite}") private val modelName: String
+    @Value("\${gemini.model:gemini-2.0-flash-lite}") private val modelName: String,
+    private val agentTools: List<AgentTool>
 ) {
     private val logger = LoggerFactory.getLogger(VeterinaryAgentService::class.java)
     private val chatHistory = ConcurrentHashMap<String, MutableList<Content>>()
 
     init {
-        logger.info("[IA_INIT] Servicio Agente Veterinario listo. Modelo: $modelName")
+        logger.info("[IA_INIT] Servicio Agente Veterinario listo. Modelo: $modelName. Tools cargadas: ${agentTools.size}")
     }
 
     fun procesarMensaje(telefono: String, mensajeUsuario: String): AgentResponse {
@@ -63,7 +58,13 @@ class VeterinaryAgentService(
         val contextoCliente = construirContextoCliente(user)
         val listaServicios = construirListadoServicios()
         val systemInstructionContent = construirSystemInstruction(contextoCliente, listaServicios)
-        val tools = crearHerramientas()
+
+        val tools = listOf(
+            Tool.builder()
+                .functionDeclarations(agentTools.map { it.getFunctionDeclaration() })
+                .build()
+        )
+        
         val config = construirConfigInicial(systemInstructionContent, tools)
 
         val userContent = construirUserContent(mensajeUsuario)
@@ -78,7 +79,8 @@ class VeterinaryAgentService(
                 userContent = userContent,
                 mensajesParaEnviar = mensajesParaEnviar,
                 historial = historial,
-                systemInstructionContent = systemInstructionContent
+                systemInstructionContent = systemInstructionContent,
+                tools = tools
             )
         } catch (e: Exception) {
             logger.error("[IA_AGENT] Error al procesar mensaje", e)
@@ -93,7 +95,8 @@ class VeterinaryAgentService(
         userContent: Content,
         mensajesParaEnviar: List<Content>,
         historial: MutableList<Content>,
-        systemInstructionContent: Content
+        systemInstructionContent: Content,
+        tools: List<Tool>
     ): AgentResponse {
         val candidate = respuesta.candidates().orElse(Collections.emptyList()).firstOrNull()
         val modelContent = candidate?.content()?.orElse(null)
@@ -110,7 +113,8 @@ class VeterinaryAgentService(
                 userContent = userContent,
                 mensajesParaEnviar = mensajesParaEnviar,
                 historial = historial,
-                systemInstructionContent = systemInstructionContent
+                systemInstructionContent = systemInstructionContent,
+                tools = tools
             )
         } else {
             val textoFinal = respuesta.text() ?: "Lo siento, no pude entenderte."
@@ -127,7 +131,8 @@ class VeterinaryAgentService(
         userContent: Content,
         mensajesParaEnviar: List<Content>,
         historial: MutableList<Content>,
-        systemInstructionContent: Content
+        systemInstructionContent: Content,
+        tools: List<Tool>
     ): AgentResponse {
         val funcName = functionCall.name().orElse("unknown")
         logger.info("[IA_AGENT] La IA solicita ejecutar herramienta: $funcName")
@@ -139,7 +144,7 @@ class VeterinaryAgentService(
 
         val toolContent = Content.builder()
             .role("function")
-            .parts(listOf(toolResult.part))
+            .parts(listOf(toolResult.toPart(funcName)))
             .build()
 
         val historialConTool = ArrayList(mensajesParaEnviar)
@@ -148,6 +153,7 @@ class VeterinaryAgentService(
 
         val finalConfig = GenerateContentConfig.builder()
             .systemInstruction(systemInstructionContent)
+            .tools(tools)
             .build()
 
         val response2 = client.generateContent(modelName, historialConTool, finalConfig)
@@ -213,7 +219,7 @@ class VeterinaryAgentService(
 
             val textoRespuesta =
                 "Encontré horas para $nombreServicio ($duracion min) el $fechaStr. " +
-                        (primeraHora?.let { "La más cercana es a las $it. " } ?: "") +
+                        (primeraHora?.let { "La más cercana es a las $it. " } ?: "") + 
                         "Valor Total: $precioTotal (Abono online: $precioAbono). " +
                         "Elige una hora o pide otra fecha:"
 
@@ -256,184 +262,14 @@ class VeterinaryAgentService(
     }
 
     private fun ejecutarHerramienta(functionCall: FunctionCall, user: User?, telefono: String): ToolExecutionResult {
-        val argsMap = functionCall.args().orElse(Collections.emptyMap())
         val funcName = functionCall.name().orElse("")
+        val argsMap = functionCall.args().orElse(Collections.emptyMap())
 
-        var paymentUrl: String? = null
-
-        val resultText = when (funcName) {
-            "registrar_cliente" -> registrarCliente(argsMap, telefono)
-            "consultar_disponibilidad" -> consultarDisponibilidad(argsMap)
-            "buscar_primera_disponibilidad" -> buscarPrimeraDisponibilidadTexto(argsMap)
-            "enviar_otp" -> {
-                otpService.requestOtp(telefono)
-                "Te envié un código de verificación a este número. Respóndeme con ese código de 6 dígitos."
-            }
-
-            "validar_otp" -> {
-                val code = argsMap["code"] as? String ?: "Error: Código requerido."
-                if (code.startsWith("Error")) {
-                    code
-                } else {
-                    otpService.validateOtp(telefono, code)
-                    marcarTelefonoVerificado(telefono)
-                    "Código verificado. Quedaste autenticado con tu teléfono."
-                }
-            }
-
-            "registrar_mascota" -> registrarMascota(argsMap, user, telefono)
-            "reservar_cita" -> reservarCita(argsMap, user, telefono).also { paymentUrl = it.second }.first
-            else -> "Error: Función desconocida o argumentos inválidos."
-        }
-
-        val part = Part.builder()
-            .functionResponse(
-                FunctionResponse.builder()
-                    .name(funcName)
-                    .response(mapOf("result" to resultText))
-                    .build()
-            )
-            .build()
-
-        logger.warn("[DEBUG_PAGO] Retornando ToolExecutionResult. URL: {}", paymentUrl)
-        return ToolExecutionResult(part = part, paymentUrl = paymentUrl)
-    }
-
-    private fun registrarCliente(argsMap: Map<String, Any>, telefono: String): String {
-        var nombre = argsMap["nombre"] as? String
-        if (nombre == null) return "Error: Nombre requerido."
-
-        nombre = nombre.replace(Regex("(?i)^(hola|soy|me llamo|mi nombre es)\\s+"), "").trim()
-        return try {
-            val phoneClean = telefono.replace("+", "")
-            val emailGen = "wsp_$phoneClean@clinipets.local"
-
-            if (userRepository.existsByEmailIgnoreCase(emailGen)) {
-                "El usuario ya estaba registrado."
-            } else {
-                val newUser = User(
-                    name = nombre,
-                    email = emailGen,
-                    phone = telefono,
-                    passwordHash = "wsp_auto_generated",
-                    role = UserRole.CLIENT
-                )
-                userRepository.save(newUser)
-                "¡Registrada como $nombre! Ahora puedes agendar."
-            }
-        } catch (e: Exception) {
-            logger.error("Error registrando cliente", e)
-            "Error al registrar cliente."
-        }
-    }
-
-    private fun consultarDisponibilidad(argsMap: Map<String, Any>): String {
-        val fechaStr = argsMap["fecha"] as? String ?: return "Error: Fecha requerida."
-        val servicioStr = argsMap["servicio"] as? String
-
-        return try {
-            val fecha = LocalDate.parse(fechaStr)
-
-            val servicioDb = servicioStr?.let { buscarServicio(it) }
-            val duracion = servicioDb?.duracionMinutos ?: 30
-            val nombreServicio = servicioDb?.nombre ?: "Consulta General"
-            val precioTotal = servicioDb?.precioBase ?: 0
-            val precioAbono = servicioDb?.precioAbono ?: 0
-
-            val slots = disponibilidadService.obtenerSlots(fecha, duracion)
-            if (slots.isEmpty()) {
-                "No quedan horas disponibles para $nombreServicio el $fechaStr."
-            } else {
-                "Encontré ${slots.size} horas para $nombreServicio (Duración: $duracion min). Valor Total: $$precioTotal. REGLA DE PAGO: Para agendar, el cliente DEBE pagar un abono online de $$precioAbono ahora mismo. El saldo se paga en clínica."
-            }
-        } catch (e: Exception) {
-            "Fecha inválida o error en agenda."
-        }
-    }
-
-    private fun buscarPrimeraDisponibilidadTexto(argsMap: Map<String, Any>): String {
-        val servicioStr = argsMap["servicio"] as? String ?: return "Error: Servicio requerido."
-        val primera = buscarPrimeraDisponibilidad(servicioStr) ?: return "No encontré horas cercanas para ese servicio."
-        val servicioDb = buscarServicio(servicioStr)
-        val nombreServicio = servicioDb?.nombre ?: servicioStr
-        val duracion = servicioDb?.duracionMinutos ?: 30
-        return "Tengo la fecha más cercana para $nombreServicio (duración $duracion min) el ${primera.first}. ¿Quieres ver los horarios?"
-    }
-
-    private fun registrarMascota(argsMap: Map<String, Any>, user: User?, telefono: String): String {
-        val nombre = (argsMap["nombre"] as? String)?.trim()
-        val especieInput = (argsMap["especie"] as? String)?.trim()
-        val raza = (argsMap["raza"] as? String)?.trim()
-
-        val userDb = resolverTutor(user, telefono) ?: return "Error: No registrado o no identificado."
-        if (nombre.isNullOrBlank() || especieInput.isNullOrBlank()) return "Error: Nombre y especie son obligatorios."
-
-        return try {
-            val especie =
-                if (especieInput.lowercase().contains("gato") || especieInput.lowercase().contains("felino")) {
-                    Especie.GATO
-                } else {
-                    Especie.PERRO
-                }
-
-            val nuevaMascota = Mascota(
-                nombre = nombre,
-                especie = especie,
-                pesoActual = BigDecimal("10.0"),
-                raza = raza?.takeIf { it.isNotBlank() } ?: "Mestizo",
-                sexo = Sexo.MACHO,
-                fechaNacimiento = LocalDate.now(),
-                tutor = userDb
-            )
-            mascotaRepository.save(nuevaMascota)
-            "¡Listo! Agregué a $nombre ($especie) a tu perfil. ¿Quieres agendar hora para él/ella?"
-        } catch (e: Exception) {
-            logger.error("Error registrando mascota", e)
-            "Error al registrar la mascota."
-        }
-    }
-
-    private fun reservarCita(argsMap: Map<String, Any>, user: User?, telefono: String): Pair<String, String?> {
-        val fechaHoraStr = argsMap["fechaHora"] as? String
-        val servicioStr = argsMap["servicio"] as? String
-        val userDb = resolverTutor(user, telefono) ?: return "Error: No registrado o no identificado." to null
-
-        if (fechaHoraStr == null) return "Error: Fecha y hora requerida." to null
-
-        return try {
-            val fechaHora = LocalDateTime.parse(fechaHoraStr)
-            val fechaHoraInstant = fechaHora.atZone(clinicZoneId).toInstant()
-
-            val mascotas = mascotaRepository.findAllByTutorId(userDb.id!!)
-            if (mascotas.isEmpty()) {
-                return "Error: No tienes mascotas registradas. Debes registrar una mascota antes de agendar." to null
-            }
-
-            val servicioDb = servicioStr?.let { buscarServicio(it) }
-            if (servicioDb == null) {
-                return "Error: No se encontró el servicio médico solicitado." to null
-            }
-
-            val mascota = mascotas.first()
-            val detalles = listOf(DetalleReservaRequest(servicioId = servicioDb.id!!, mascotaId = mascota.id))
-            val tutorPayload = JwtPayload(
-                userId = userDb.id!!,
-                email = userDb.email,
-                role = userDb.role,
-                expiresAt = Instant.now().plus(1, ChronoUnit.HOURS)
-            )
-
-            val resultado = reservaService.crearReserva(
-                detallesRequest = detalles,
-                fechaHoraInicio = fechaHoraInstant,
-                origen = OrigenCita.WHATSAPP,
-                tutor = tutorPayload
-            )
-            logger.warn("[DEBUG_PAGO] Reserva creada. Resultado PaymentURL: {}", resultado.paymentUrl)
-            "EXITO: Reserva creada. Dile al usuario que le enviaremos el link de pago en un mensaje separado." to resultado.paymentUrl
-        } catch (e: Exception) {
-            logger.error("Error creando reserva", e)
-            "Ocurrió un error al intentar crear la reserva: ${e.message}" to null
+        val tool = agentTools.find { it.name == funcName }
+        return if (tool != null) {
+            tool.execute(argsMap, ToolContext(telefono, user?.id))
+        } else {
+            ToolExecutionResult("Error: Función desconocida o argumentos inválidos.")
         }
     }
 
@@ -445,116 +281,6 @@ class VeterinaryAgentService(
         return todos.find { it.nombre.equals(input, ignoreCase = true) }
             ?: todos.find { it.nombre.contains(input, ignoreCase = true) }
             ?: todos.find { it.nombre.equals("Consulta General", ignoreCase = true) }
-    }
-
-    private fun crearHerramientas(): List<Tool> {
-        val propString = Schema.builder()
-            .type(com.google.genai.types.Type.Known.STRING)
-            .build()
-
-        val funcRegistrar = FunctionDeclaration.builder()
-            .name("registrar_cliente")
-            .description("Registra un nuevo cliente solo con su nombre.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .properties(mapOf("nombre" to propString))
-                    .required(listOf("nombre"))
-                    .build()
-            )
-            .build()
-
-        val funcConsultar = FunctionDeclaration.builder()
-            .name("consultar_disponibilidad")
-            .description("Consulta disponibilidad. Requiere fecha y tipo de servicio.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .properties(mapOf("fecha" to propString, "servicio" to propString))
-                    .required(listOf("fecha", "servicio"))
-                    .build()
-            )
-            .build()
-
-        val funcBuscarPrimera = FunctionDeclaration.builder()
-            .name("buscar_primera_disponibilidad")
-            .description("Busca la primera fecha con horas disponibles para un servicio.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .properties(mapOf("servicio" to propString))
-                    .required(listOf("servicio"))
-                    .build()
-            )
-            .build()
-
-        val funcReservar = FunctionDeclaration.builder()
-            .name("reservar_cita")
-            .description("Confirma reserva. Requiere fechaHora ISO y servicio.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .properties(mapOf("fechaHora" to propString, "servicio" to propString))
-                    .required(listOf("fechaHora", "servicio"))
-                    .build()
-            )
-            .build()
-
-        val funcRegistrarMascota = FunctionDeclaration.builder()
-            .name("registrar_mascota")
-            .description("Registra una nueva mascota para el usuario actual.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .properties(
-                        mapOf(
-                            "nombre" to propString,
-                            "especie" to propString,
-                            "raza" to propString
-                        )
-                    )
-                    .required(listOf("nombre", "especie"))
-                    .build()
-            )
-            .build()
-
-        val funcEnviarOtp = FunctionDeclaration.builder()
-            .name("enviar_otp")
-            .description("Envía un código OTP al teléfono del chat actual.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .build()
-            )
-            .build()
-
-        val funcValidarOtp = FunctionDeclaration.builder()
-            .name("validar_otp")
-            .description("Valida el código OTP enviado al teléfono.")
-            .parameters(
-                Schema.builder()
-                    .type(com.google.genai.types.Type.Known.OBJECT)
-                    .properties(mapOf("code" to propString))
-                    .required(listOf("code"))
-                    .build()
-            )
-            .build()
-
-        return listOf(
-            Tool.builder()
-                .functionDeclarations(
-                    listOf(
-                        funcRegistrar,
-                        funcConsultar,
-                        funcBuscarPrimera,
-                        funcEnviarOtp,
-                        funcValidarOtp,
-                        funcReservar,
-                        funcRegistrarMascota
-                    )
-                )
-                .build()
-        )
     }
 
     private fun prepararHistorial(telefono: String): MutableList<Content> {
@@ -655,23 +381,6 @@ class VeterinaryAgentService(
                 .build()
         )
     }
-
-    private fun resolverTutor(user: User?, telefono: String): User? {
-        if (user != null) return user
-        return userRepository.findByPhone(telefono)
-            ?: userRepository.findByPhone(telefono.removePrefix("56"))
-            ?: userRepository.findByPhone("+" + telefono)
-    }
-
-    private fun marcarTelefonoVerificado(telefono: String) {
-        val normalized = otpService.normalizePhone(telefono)
-        userRepository.findByPhone(normalized)?.let {
-            it.phoneVerified = true
-            userRepository.save(it)
-        }
-    }
-
-    private data class ToolExecutionResult(val part: Part, val paymentUrl: String? = null)
 
     fun esNombreInapropiado(texto: String): Boolean {
         val userContent = Content.builder()

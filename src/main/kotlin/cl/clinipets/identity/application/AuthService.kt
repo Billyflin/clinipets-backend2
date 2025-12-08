@@ -7,7 +7,7 @@ import cl.clinipets.core.security.JwtService
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
-import cl.clinipets.core.integration.meta.MetaService
+import cl.clinipets.core.integration.meta.WhatsAppClient
 import cl.clinipets.identity.api.ProfileResponse
 import cl.clinipets.identity.api.TokenResponse
 import cl.clinipets.identity.api.UserUpdateRequest
@@ -35,9 +35,8 @@ class AuthService(
     private val adminProperties: AdminProperties,
     private val otpService: OtpService,
     private val accountMergeService: AccountMergeService,
-    private val mascotaRepository: cl.clinipets.veterinaria.domain.MascotaRepository,
     private val otpTokenRepository: OtpTokenRepository,
-    private val metaService: MetaService
+    private val whatsAppClient: WhatsAppClient
 ) {
     private val logger = LoggerFactory.getLogger(AuthService::class.java)
     private val secureRandom = java.security.SecureRandom()
@@ -260,7 +259,7 @@ class AuthService(
             )
         )
 
-        metaService.enviarMensaje(phoneKey, "🔐 Tu código Clinipets es: *$code*")
+        whatsAppClient.enviarMensaje(phoneKey, "🔐 Tu código Clinipets es: *$code*")
     }
 
     @Transactional
