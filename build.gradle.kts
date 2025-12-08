@@ -49,12 +49,11 @@ dependencies {
     implementation("com.google.firebase:firebase-admin:9.2.0")
 
     implementation("com.google.guava:guava:32.0.1-jre")
-
     implementation("io.minio:minio:8.5.7")
-
     implementation("com.mercadopago:sdk-java:2.8.0") {
         exclude(group = "org.apache.maven.plugins", module = "maven-javadoc-plugin")
     }
+    implementation("com.github.librepdf:openpdf:1.3.39")
 
     // JWT
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")

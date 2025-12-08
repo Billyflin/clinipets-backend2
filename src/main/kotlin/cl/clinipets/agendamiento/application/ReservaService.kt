@@ -19,6 +19,7 @@ import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.pagos.application.EstadoPagoMP
+import cl.clinipets.pagos.application.PagoItem
 import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.application.InventarioService
 import cl.clinipets.servicios.application.PromoEngineService
@@ -50,6 +51,12 @@ class ReservaService(
     private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(ReservaService::class.java)
+
+    private data class TempDetalle(
+        val servicio: cl.clinipets.servicios.domain.ServicioMedico,
+        val mascota: cl.clinipets.veterinaria.domain.Mascota?,
+        val precio: Int
+    )
 
     @Transactional(readOnly = true)
     fun obtenerResumenDiario(fecha: LocalDate): ResumenDiarioResponse {
@@ -113,12 +120,6 @@ class ReservaService(
         val abonos = mutableListOf<Int>()
         var duracionTotalMinutos = 0L
 
-        // We need a temporary object to hold the data before creating DetalleCita with the Cita reference
-        data class TempDetalle(
-            val servicio: cl.clinipets.servicios.domain.ServicioMedico,
-            val mascota: cl.clinipets.veterinaria.domain.Mascota?,
-            val precio: Int
-        )
         val tempList = mutableListOf<TempDetalle>()
 
         logger.debug(">>> [CREAR_RESERVA] Procesando items del carrito...")
@@ -278,12 +279,8 @@ class ReservaService(
             val guardada = citaRepository.save(cita)
             logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
 
-            val tipoCobro = if (pagoTotal) "Pago Total" else "Reserva"
-            val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Clinipets ($tipoCobro) - ${tempList.size} items",
-                precio = guardada.montoAbono,
-                externalReference = guardada.id!!.toString()
-            )
+            val itemsPago = buildItemsPago(tempList, pagoTotal, montoAbonoFinal)
+            val paymentUrl = pagoService.crearPreferencia(itemsPago, guardada.id!!.toString())
             guardada.paymentUrl = paymentUrl
             notificarNuevaReserva(guardada, tutor)
             return ReservaResult(guardada, paymentUrl)
@@ -313,13 +310,9 @@ class ReservaService(
                 )
             }
             val guardada = citaRepository.save(cita)
-            
-            val tipoCobro = if (pagoTotal) "Pago Total" else "Reserva"
-            val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Clinipets ($tipoCobro) - ${tempList.size} items",
-                precio = guardada.montoAbono,
-                externalReference = guardada.id!!.toString()
-            )
+
+            val itemsPago = buildItemsPago(tempList, pagoTotal, montoAbonoFinal)
+            val paymentUrl = pagoService.crearPreferencia(itemsPago, guardada.id!!.toString())
             guardada.paymentUrl = paymentUrl
             notificarNuevaReserva(guardada, tutor)
             return ReservaResult(guardada, paymentUrl)
@@ -458,11 +451,10 @@ class ReservaService(
 
         if (saldoPendiente > 0 && metodoPago == MetodoPago.MERCADO_PAGO_LINK) {
             logger.info("[FINALIZAR_CITA] Generando link de pago para saldo pendiente: {}", saldoPendiente)
-            val paymentUrl = pagoService.crearPreferencia(
-                titulo = "Clinipets (Saldo Pendiente) - Cita ${cita.id}",
-                precio = saldoPendiente,
-                externalReference = "SALDO-${cita.id}"
-            )
+            val citaIdCorto = cita.id?.toString()?.take(8) ?: "sin-id"
+            val saldoItem =
+                listOf(PagoItem(titulo = "Saldo Pendiente Cita #$citaIdCorto", precioUnitario = saldoPendiente))
+            val paymentUrl = pagoService.crearPreferencia(saldoItem, "SALDO-${cita.id}")
             cita.paymentUrl = paymentUrl
             cita.estado = EstadoCita.POR_PAGAR
             
@@ -629,5 +621,34 @@ class ReservaService(
         val hora = fechaLocal.toLocalTime().truncatedTo(ChronoUnit.MINUTES)
         val servicioNombre = cita.detalles.firstOrNull()?.servicio?.nombre ?: "cita"
         return "$servicioNombre el ${fechaLocal.toLocalDate()} a las $hora"
+    }
+
+    private fun buildItemsPago(
+        tempList: List<TempDetalle>,
+        pagoTotal: Boolean,
+        montoAbonoFinal: Int
+    ): List<PagoItem> {
+        val itemsPago = ArrayList<PagoItem>()
+
+        if (pagoTotal) {
+            tempList.forEach { temp ->
+                itemsPago.add(
+                    PagoItem(
+                        titulo = temp.servicio.nombre,
+                        precioUnitario = temp.precio
+                    )
+                )
+            }
+        } else {
+            val nombresServicios = tempList.joinToString(", ") { it.servicio.nombre }
+            itemsPago.add(
+                PagoItem(
+                    titulo = "Reserva: $nombresServicios",
+                    precioUnitario = montoAbonoFinal
+                )
+            )
+        }
+
+        return itemsPago
     }
 }

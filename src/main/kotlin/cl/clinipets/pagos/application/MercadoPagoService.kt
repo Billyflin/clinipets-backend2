@@ -12,8 +12,15 @@ import org.springframework.beans.factory.annotation.Value
 import org.springframework.stereotype.Component
 import java.math.BigDecimal
 
+data class PagoItem(
+    val titulo: String,
+    val descripcion: String? = null,
+    val precioUnitario: Int,
+    val cantidad: Int = 1
+)
+
 interface PagoService {
-    fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String
+    fun crearPreferencia(items: List<PagoItem>, externalReference: String): String
     fun consultarEstadoPago(externalReference: String): EstadoPagoResult
     fun reembolsar(paymentId: Long): Boolean
     fun getPaymentDetails(paymentId: Long): com.mercadopago.resources.payment.Payment?
@@ -38,17 +45,20 @@ class MercadoPagoService(
         MercadoPagoConfig.setAccessToken(accessToken)
     }
 
-    override fun crearPreferencia(titulo: String, precio: Int, externalReference: String): String {
-        logger.info("Creando preferencia MP - Titulo: {}, Precio: {}, Ref: {}", titulo, precio, externalReference)
+    override fun crearPreferencia(items: List<PagoItem>, externalReference: String): String {
+        logger.info("Creando preferencia MP - Items: {}, Ref: {}", items.size, externalReference)
 
         val client = PreferenceClient()
 
-        val item = PreferenceItemRequest.builder()
-            .title(titulo)
-            .quantity(1)
-            .unitPrice(BigDecimal.valueOf(precio.toDouble()))
-            .currencyId("CLP")
-            .build()
+        val preferenceItems = items.map { item ->
+            PreferenceItemRequest.builder()
+                .title(item.titulo)
+                .description(item.descripcion)
+                .quantity(item.cantidad)
+                .unitPrice(BigDecimal.valueOf(item.precioUnitario.toLong()))
+                .currencyId("CLP")
+                .build()
+        }
 
         val backUrls = PreferenceBackUrlsRequest.builder()
             .success("clinipets://payment-result?status=success")
@@ -57,7 +67,7 @@ class MercadoPagoService(
             .build()
 
         val request = PreferenceRequest.builder()
-            .items(listOf(item))
+            .items(preferenceItems)
             .externalReference(externalReference)
             .backUrls(backUrls)
             .autoReturn("approved")

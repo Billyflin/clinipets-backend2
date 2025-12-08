@@ -5,10 +5,14 @@ import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.historial.application.FichaClinicaService
+import cl.clinipets.veterinaria.historial.application.PdfService
 import jakarta.validation.Valid
+import org.springframework.core.io.ByteArrayResource
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.slf4j.LoggerFactory
+import org.springframework.http.HttpHeaders
+import org.springframework.http.MediaType
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
@@ -18,7 +22,8 @@ import java.util.UUID
 @RequestMapping("/api/v1/fichas")
 class FichaClinicaController(
     private val fichaService: FichaClinicaService,
-    private val mascotaRepository: MascotaRepository // Needed for ownership check
+    private val mascotaRepository: MascotaRepository, // Needed for ownership check
+    private val pdfService: PdfService
 ) {
     private val logger = LoggerFactory.getLogger(FichaClinicaController::class.java)
 
@@ -55,5 +60,23 @@ class FichaClinicaController(
         val historial = fichaService.obtenerHistorial(mascotaId)
         logger.info("[HISTORIAL] Fin - Registros: {}", historial.size)
         return ResponseEntity.ok(historial)
+    }
+
+    @GetMapping("/{fichaId}/pdf")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CLIENT')")
+    fun descargarFichaPdf(
+        @PathVariable fichaId: UUID,
+        @AuthenticationPrincipal user: JwtPayload
+    ): ResponseEntity<ByteArrayResource> {
+        logger.info("[FICHA_PDF] Solicitud de PDF. Ficha: {}, Usuario: {}", fichaId, user.email)
+        val pdfBytes = pdfService.generarFichaClinicaPdf(fichaId, user)
+        val headers = HttpHeaders().apply {
+            contentType = MediaType.APPLICATION_PDF
+            add(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ficha-$fichaId.pdf\"")
+        }
+        return ResponseEntity.ok()
+            .headers(headers)
+            .contentLength(pdfBytes.size.toLong())
+            .body(ByteArrayResource(pdfBytes))
     }
 }
