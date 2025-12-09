@@ -12,6 +12,7 @@ import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.domain.Sexo
 import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.storage.StorageService
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
@@ -23,6 +24,7 @@ import org.mockito.kotlin.mock
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.context.TestConfiguration
+import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Primary
 import org.springframework.test.context.TestPropertySource
@@ -48,6 +50,8 @@ class ReservaServiceTest(
     @Autowired private val mascotaRepository: MascotaRepository,
     @Autowired private val servicioMedicoRepository: ServicioMedicoRepository
 ) {
+    @MockBean
+    private lateinit var storageService: StorageService
 
     @Autowired
     private lateinit var pagoMock: PagoService
@@ -152,7 +156,7 @@ class ReservaServiceTest(
         @Bean
         @Primary
         fun pagoMock(): PagoService = mock {
-            on { crearPreferencia(org.mockito.kotlin.any(), org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doReturn "https://pago.test"
+            on { crearPreferencia(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doReturn "https://pago.test"
         }
     }
 }

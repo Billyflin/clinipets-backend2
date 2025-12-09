@@ -5,27 +5,29 @@ import cl.clinipets.agendamiento.api.DetalleReservaRequest
 import cl.clinipets.agendamiento.api.ResumenDiarioResponse
 import cl.clinipets.agendamiento.api.toDetalladaResponse
 import cl.clinipets.agendamiento.domain.Cita
+import cl.clinipets.agendamiento.domain.ClinicalValidator
 import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.DetalleCita
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
 import cl.clinipets.agendamiento.domain.TipoAtencion
 import cl.clinipets.agendamiento.domain.MetodoPago
-import cl.clinipets.core.integration.NotificationService
+import cl.clinipets.agendamiento.domain.events.ReservaCanceladaEvent
+import cl.clinipets.agendamiento.domain.events.ReservaConfirmadaEvent
+import cl.clinipets.agendamiento.domain.events.ReservaCreadaEvent
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
-import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.pagos.application.EstadoPagoMP
 import cl.clinipets.pagos.application.PagoItem
 import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.application.InventarioService
-import cl.clinipets.servicios.application.PromoEngineService
 import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import org.springframework.context.ApplicationEventPublisher
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -44,11 +46,11 @@ class ReservaService(
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val mascotaRepository: MascotaRepository,
     private val pagoService: PagoService,
-    private val notificationService: NotificationService,
     private val inventarioService: InventarioService,
-    private val promoEngineService: PromoEngineService,
-    private val userRepository: UserRepository,
-    private val clinicZoneId: ZoneId
+    private val pricingCalculator: PricingCalculator,
+    private val clinicalValidator: ClinicalValidator,
+    private val clinicZoneId: ZoneId,
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(ReservaService::class.java)
 
@@ -113,7 +115,7 @@ class ReservaService(
 
         // --- PROMOCIONES ---
         val fechaCita = fechaHoraInicio.atZone(clinicZoneId).toLocalDate()
-        val mapaDescuentos = promoEngineService.calcularDescuentos(detallesRequest, fechaCita)
+        val serviciosEnCarritoIds = detallesRequest.map { it.servicioId }.toSet()
         // -------------------
 
         var totalPrecio = 0
@@ -135,10 +137,6 @@ class ReservaService(
 
             var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
 
-            // --- CÁLCULO DE PRECIO BASE ---
-            // Primero obtenemos el precio base o calculado por reglas de dominio (peso, etc)
-            var precioItem = servicio.precioBase
-
             if (servicio.categoria == CategoriaServicio.PRODUCTO) {
                 if (req.mascotaId != null) {
                     mascota = mascotaRepository.findById(req.mascotaId)
@@ -154,74 +152,17 @@ class ReservaService(
 
                 if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
 
-                // --- VALIDACIONES DE NEGOCIO Y CLÍNICAS ---
-
-                // 1. Validación de Esterilización
-                if (servicio.bloqueadoSiEsterilizado && mascota.esterilizado) {
-                    throw BadRequestException("La mascota ${mascota.nombre} ya está esterilizada. No puede realizarse '${servicio.nombre}'.")
-                }
-
-                // 2. Validación de Dependencias Inteligente
-                if (servicio.serviciosRequeridosIds.isNotEmpty()) {
-                    val idsEnCarrito = detallesRequest.map { it.servicioId }.toSet()
-
-                    servicio.serviciosRequeridosIds.forEach { reqId ->
-                        if (!idsEnCarrito.contains(reqId)) {
-                            // No está en el carrito. Verificamos condición clínica.
-                            val servicioReq = servicioMedicoRepository.findById(reqId).orElse(null)
-                            var cumpleClinicamente = false
-
-                            if (servicioReq != null) {
-                                // Lógica específica para Test Retroviral (por nombre para robustez si cambia ID)
-                                if (servicioReq.nombre.contains("Retroviral", ignoreCase = true) ||
-                                    servicioReq.nombre.contains("Leucemia", ignoreCase = true)
-                                ) {
-
-                                    if (mascota.testRetroviralNegativo) {
-                                        cumpleClinicamente = true
-                                        logger.info(">>> [VALIDACION] Dependencia '${servicioReq.nombre}' satisfecha por historial clínico (Negativo).")
-                                    }
-                                }
-                            }
-
-                            if (!cumpleClinicamente) {
-                                val nombreReq = servicioReq?.nombre ?: "Servicio Requerido"
-                                throw BadRequestException("El servicio '${servicio.nombre}' requiere que agregues también: '$nombreReq' (o que la mascota ya cumpla el requisito clínico).")
-                            }
-                        }
-                    }
-                }
-                // ------------------------------------------
-
-                precioItem = servicio.calcularPrecioPara(mascota)
+                clinicalValidator.validarRequisitosClinicos(servicio, mascota, serviciosEnCarritoIds)
                 duracionTotalMinutos += servicio.duracionMinutos
             }
 
-            // --- APLICACIÓN DE PROMOCIONES ---
-            // Verificamos si el motor de promociones calculó un precio diferente
-            val detallePromo = mapaDescuentos[servicio.id]
-            if (detallePromo != null && detallePromo.precioFinal != detallePromo.precioOriginal) {
-                // Si el precio original calculado por el motor (que usa precioBase) difiere del precioItem (calculado por peso),
-                // debemos tener cuidado.
-                // ESTRATEGIA: Si el motor reporta un descuento, aplicamos ese delta sobre el precioItem real.
-                // Delta = PrecioOriginalMotor - PrecioFinalMotor
-                val descuento = detallePromo.precioOriginal - detallePromo.precioFinal
-                if (descuento > 0) {
-                    val precioAntiguo = precioItem
-                    precioItem -= descuento
-                    if (precioItem < 0) precioItem = 0
-                    logger.info(">>> [PROMO] Aplicando descuento a ${servicio.nombre}: de $$precioAntiguo a $$precioItem. (${detallePromo.notas.joinToString()})")
-                }
-            }
+            val precioCalculado = pricingCalculator.calcularPrecioFinal(servicio, mascota, fechaCita)
+            abonos.add(precioCalculado.abono)
 
-            // Abono logic: Collect deposits. If null (e.g. products), use 0.
-            val abonoItem = servicio.precioAbono ?: 0
-            abonos.add(abonoItem)
-            
-            logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: $precioItem | Abono: $abonoItem")
+            logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: ${precioCalculado.precioFinal} | Abono: ${precioCalculado.abono}")
 
-            totalPrecio += precioItem
-            tempList.add(TempDetalle(servicio, mascota, precioItem))
+            totalPrecio += precioCalculado.precioFinal
+            tempList.add(TempDetalle(servicio, mascota, precioCalculado.precioFinal))
         }
 
         // Calculate final deposit
@@ -282,7 +223,7 @@ class ReservaService(
             val itemsPago = buildItemsPago(tempList, pagoTotal, montoAbonoFinal)
             val paymentUrl = pagoService.crearPreferencia(itemsPago, guardada.id!!.toString())
             guardada.paymentUrl = paymentUrl
-            notificarNuevaReserva(guardada, tutor)
+            eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
             return ReservaResult(guardada, paymentUrl)
         } else {
             // Caso de productos sin duración (Venta directa o retiro)
@@ -314,7 +255,7 @@ class ReservaService(
             val itemsPago = buildItemsPago(tempList, pagoTotal, montoAbonoFinal)
             val paymentUrl = pagoService.crearPreferencia(itemsPago, guardada.id!!.toString())
             guardada.paymentUrl = paymentUrl
-            notificarNuevaReserva(guardada, tutor)
+            eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
             return ReservaResult(guardada, paymentUrl)
         }
     }
@@ -330,7 +271,7 @@ class ReservaService(
         cita.estado = EstadoCita.CONFIRMADA
         val saved = citaRepository.save(cita)
         logger.info("[CONFIRMAR_RESERVA] Cita confirmada exitosamente")
-        notificarConfirmacion(saved)
+        eventPublisher.publishEvent(ReservaConfirmadaEvent(saved.id!!))
         return saved
     }
 
@@ -355,7 +296,7 @@ class ReservaService(
         cita.estado = EstadoCita.CANCELADA
         val saved = citaRepository.save(cita)
         logger.info("[CANCELAR_RESERVA] Cita cancelada exitosamente")
-        notificarStaffCita(saved, "Reserva cancelada", "El tutor canceló la reserva")
+        eventPublisher.publishEvent(ReservaCanceladaEvent(saved.id!!, "El tutor canceló la reserva"))
         return saved
     }
 
@@ -385,7 +326,7 @@ class ReservaService(
                 cita.mpPaymentId = estadoPago.paymentId
                 val saved = citaRepository.save(cita)
                 logger.info("Auto-healing listado: Cita {} confirmada", cita.id)
-                notificarConfirmacion(saved)
+                eventPublisher.publishEvent(ReservaConfirmadaEvent(saved.id!!))
             }
         }
 
@@ -459,7 +400,6 @@ class ReservaService(
             cita.estado = EstadoCita.POR_PAGAR
             
             citaRepository.save(cita)
-            notificarStaffCita(cita, "Saldo pendiente", "Se generó link de pago por $saldoPendiente para el saldo pendiente")
             return cita
         }
 
@@ -470,7 +410,6 @@ class ReservaService(
         
         val saved = citaRepository.save(cita)
         logger.info("[FINALIZAR_CITA] Cita finalizada correctamente. Saldo pendiente virtualmente en 0.")
-        notificarStaffCita(saved, "Cita finalizada", "Estado actualizado a ${saved.estado} por ${metodoPago ?: "N/A"}")
         return saved
     }
 
@@ -513,7 +452,7 @@ class ReservaService(
         val saved = citaRepository.save(cita)
         saved.detalles.size // Forzar carga de detalles
         logger.info("[CANCELAR_STAFF] Cita cancelada correctamente")
-        notificarStaffCita(saved, "Reserva cancelada", "Cancelación realizada por el staff")
+        eventPublisher.publishEvent(ReservaCanceladaEvent(saved.id!!, "Cancelación realizada por el staff"))
         return saved
     }
 
@@ -568,59 +507,8 @@ class ReservaService(
         cita.mpPaymentId = estadoPago.paymentId
         val saved = citaRepository.save(cita)
         logger.info("Auto-healing: Cita {} confirmada al consultar estado", cita.id)
-        notificarConfirmacion(saved)
+        eventPublisher.publishEvent(ReservaConfirmadaEvent(saved.id!!))
         return saved
-    }
-
-    private fun notificarConfirmacion(cita: Cita) {
-        val servicioNombre = cita.detalles.firstOrNull()?.servicio?.nombre ?: "tu reserva"
-        notificationService.enviarNotificacion(
-            cita.tutorId,
-            "¡Reserva Confirmada!",
-            "Tu cita para $servicioNombre está lista",
-            data = mapOf("type" to "CLIENT_RESERVATIONS")
-        )
-        notificarStaffCita(cita, "Pago confirmado", "La reserva quedó en estado ${cita.estado}")
-    }
-
-    private fun notificarNuevaReserva(cita: Cita, tutor: JwtPayload) {
-        val citaId = cita.id
-        if (citaId == null) {
-            logger.warn("[NOTIFS] Intento de notificar nueva reserva sin ID asignado.")
-            return
-        }
-        val tutorNombre = userRepository.findById(tutor.userId)
-            .map { it.name }
-            .orElse(null)
-            ?.takeIf { it.isNotBlank() }
-            ?: tutor.email.substringBefore("@")
-        val hora = cita.fechaHoraInicio.atZone(clinicZoneId)
-            .toLocalTime()
-            .truncatedTo(ChronoUnit.MINUTES)
-        notificationService.enviarNotificacionAStaff(
-            "Nueva Reserva",
-            "Cliente $tutorNombre agendó para $hora",
-            mapOf(
-                "type" to "STAFF_CITA_DETAIL",
-                "citaId" to citaId.toString()
-            )
-        )
-    }
-
-    private fun notificarStaffCita(cita: Cita, titulo: String, detalle: String) {
-        val resumen = resumenCita(cita)
-        val citaId = cita.id ?: "sin-id"
-        notificationService.enviarNotificacionAStaff(
-            titulo,
-            "Cita $citaId: $detalle ($resumen)."
-        )
-    }
-
-    private fun resumenCita(cita: Cita): String {
-        val fechaLocal = cita.fechaHoraInicio.atZone(clinicZoneId)
-        val hora = fechaLocal.toLocalTime().truncatedTo(ChronoUnit.MINUTES)
-        val servicioNombre = cita.detalles.firstOrNull()?.servicio?.nombre ?: "cita"
-        return "$servicioNombre el ${fechaLocal.toLocalDate()} a las $hora"
     }
 
     private fun buildItemsPago(

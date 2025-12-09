@@ -15,7 +15,7 @@ description = "backend"
 sonar {
     properties {
         property("sonar.projectKey", "clinipets-backend")
-        property("sonar.host.url", "http://homeserver.local:9000")
+        property("sonar.host.url", "http://homeserver.local:9005")
         property("sonar.login", System.getProperty("sonar.token"))
         }
 }
@@ -39,6 +39,8 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-hibernate6")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
+    implementation("com.azure:azure-ai-inference:1.0.0-beta.1")
+    implementation("com.azure:azure-core-http-okhttp:1.13.2")
 
     implementation("org.springframework.retry:spring-retry")
     implementation("org.springframework:spring-aspects")
@@ -79,6 +81,15 @@ dependencies {
 
     // Logging JSON
     implementation("net.logstash.logback:logstash-logback-encoder:7.4")
+}
+
+configurations.all {
+    resolutionStrategy {
+        force(
+            "com.squareup.okio:okio:3.4.0",
+            "com.squareup.okio:okio-jvm:3.4.0"
+        )
+    }
 }
 
 kotlin {

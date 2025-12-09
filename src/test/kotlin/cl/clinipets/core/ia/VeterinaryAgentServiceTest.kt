@@ -6,6 +6,7 @@ import cl.clinipets.agendamiento.application.ReservaService
 import cl.clinipets.agendamiento.domain.Cita
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.core.storage.StorageService
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
@@ -30,6 +31,7 @@ import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.context.ActiveProfiles
 import org.springframework.test.context.bean.override.mockito.MockitoBean
 import java.math.BigDecimal
@@ -61,7 +63,10 @@ class VeterinaryAgentServiceTest {
     private lateinit var servicioMedicoRepository: ServicioMedicoRepository
 
     @MockitoBean
-    private lateinit var geminiClient: GenAiClientWrapper
+    private lateinit var aiClient: GenAiClientWrapper
+
+    @MockBean
+    private lateinit var storageService: StorageService
 
     @Test
     fun `procesarMensaje deberia responder correctamente cuando el usuario existe`() {
@@ -82,7 +87,7 @@ class VeterinaryAgentServiceTest {
         whenever(userRepository.findByPhone(any())).thenReturn(user)
         whenever(mascotaRepository.findAllByTutorId(userId)).thenReturn(emptyList())
 
-        // 3. Mockear Gemini Client (Wrapper)
+        // 3. Mockear cliente IA (Wrapper)
         val mockResponse = mock<GenerateContentResponse>()
 
         val textPart = Part.builder().text(respuestaEsperada).build()
@@ -93,7 +98,7 @@ class VeterinaryAgentServiceTest {
         whenever(mockResponse.text()).thenReturn(respuestaEsperada)
 
         whenever(
-            geminiClient.generateContent(
+            aiClient.generateContent(
                 any<String>(),
                 any<List<Content>>(),
                 any<GenerateContentConfig>()
@@ -138,7 +143,7 @@ class VeterinaryAgentServiceTest {
         val slot2 = fechaConsulta.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
         whenever(disponibilidadService.obtenerSlots(eq(fechaConsulta), any())).thenReturn(listOf(slot1, slot2))
 
-        // 4. Configurar Mock de Gemini (Solo Turno 1 -> Function Call)
+        // 4. Configurar Mock de IA (Solo Turno 1 -> Function Call)
         val argsMap: Map<String, Any> = mapOf("fecha" to fechaStr, "servicio" to "Consulta General")
 
         val functionCallPart = Part.builder()
@@ -157,7 +162,7 @@ class VeterinaryAgentServiceTest {
 
         whenever(response1.candidates()).thenReturn(Optional.of(listOf(candidate1)))
 
-        whenever(geminiClient.generateContent(any<String>(), any<List<Content>>(), any())).thenReturn(response1)
+        whenever(aiClient.generateContent(any<String>(), any<List<Content>>(), any())).thenReturn(response1)
 
         // 5. Ejecutar
         val mensajeUsuario = "Quiero agendar para $fechaStr"
@@ -234,7 +239,7 @@ class VeterinaryAgentServiceTest {
         whenever(reservaService.crearReserva(any(), any(), any(), any(), any(), any(), any()))
             .thenReturn(mockReservaResult)
 
-        // 4. Configurar Mock de Gemini (Multi-turno)
+        // 4. Configurar Mock de IA (Multi-turno)
         // Turno 1: LLamada a funcion reservar_cita
         val argsMap: Map<String, Any> = mapOf("fechaHora" to fechaHoraStr)
         val functionCallPart = Part.builder()
@@ -263,7 +268,7 @@ class VeterinaryAgentServiceTest {
 
         // Secuencia de llamadas al cliente (User input -> History input)
         // any<List<Content>>() is used for simplicity
-        whenever(geminiClient.generateContent(any<String>(), any<List<Content>>(), any()))
+        whenever(aiClient.generateContent(any<String>(), any<List<Content>>(), any()))
             .thenReturn(response1)
             .thenReturn(response2)
 
@@ -324,7 +329,7 @@ class VeterinaryAgentServiceTest {
             .build()
         whenever(response1.candidates()).thenReturn(Optional.of(listOf(candidate1)))
 
-        whenever(geminiClient.generateContent(any<String>(), any<List<Content>>(), any())).thenReturn(response1)
+        whenever(aiClient.generateContent(any<String>(), any<List<Content>>(), any())).thenReturn(response1)
 
         val respuesta = agentService.procesarMensaje(telefono, "Quiero castración")
 

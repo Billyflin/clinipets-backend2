@@ -1,6 +1,7 @@
 # Ignore environment files
 .env
 .env.*
+!.env.example
 
 # Gradle
 .gradle/
@@ -37,3 +38,4 @@ service-account.json
 *.json
 repomix-backendv2.xml
 repomix-output.xml
+/htmlReport/

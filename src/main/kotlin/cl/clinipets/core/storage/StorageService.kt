@@ -5,12 +5,14 @@ import io.minio.MinioClient
 import io.minio.PutObjectArgs
 import org.slf4j.LoggerFactory
 import org.springframework.beans.factory.annotation.Value
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty
 import org.springframework.stereotype.Service
 import org.springframework.web.multipart.MultipartFile
 import java.io.InputStream
 import java.util.UUID
 
 @Service
+@ConditionalOnProperty(name = ["minio.enabled"], havingValue = "true", matchIfMissing = true)
 class StorageService(
     private val minioClient: MinioClient,
     @Value("\${minio.bucket-name}") private val bucketName: String,

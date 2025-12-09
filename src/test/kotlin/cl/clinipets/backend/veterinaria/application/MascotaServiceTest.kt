@@ -9,11 +9,13 @@ import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.veterinaria.application.MascotaService
+import cl.clinipets.core.storage.StorageService
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
+import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.context.TestPropertySource
 import java.math.BigDecimal
 import java.time.Instant
@@ -35,6 +37,8 @@ class MascotaServiceTest(
     @Autowired private val userRepository: UserRepository,
     @Autowired private val mascotaRepository: MascotaRepository
 ) {
+    @MockBean
+    private lateinit var storageService: StorageService
 
     private lateinit var tutorPayload: JwtPayload
     private lateinit var otroPayload: JwtPayload

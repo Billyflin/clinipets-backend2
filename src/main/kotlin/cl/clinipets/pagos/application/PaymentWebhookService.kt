@@ -2,8 +2,9 @@ package cl.clinipets.pagos.application
 
 import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.EstadoCita
-import cl.clinipets.core.integration.NotificationService
+import cl.clinipets.agendamiento.domain.events.ReservaConfirmadaEvent
 import org.slf4j.LoggerFactory
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.scheduling.annotation.Async
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -13,7 +14,7 @@ import java.util.*
 class PaymentWebhookService(
     private val mercadoPagoService: MercadoPagoService,
     private val citaRepository: CitaRepository,
-    private val notificationService: NotificationService
+    private val eventPublisher: ApplicationEventPublisher
 ) {
     private val logger = LoggerFactory.getLogger(PaymentWebhookService::class.java)
 
@@ -57,9 +58,13 @@ class PaymentWebhookService(
                         cita.mpPaymentId = paymentId
                         citaRepository.save(cita)
                         logger.info("[WEBHOOK_PROCESSOR] Cita {} actualizada a CONFIRMADA por webhook.", citaId)
-                        enviarNotificacionesPago(cita.tutorId, citaId)
+                        eventPublisher.publishEvent(ReservaConfirmadaEvent(citaId))
                     } else {
-                        logger.info("[WEBHOOK_PROCESSOR] La cita {} ya estaba en estado {}. No se actualiza.", citaId, cita.estado)
+                        logger.info(
+                            "[WEBHOOK_PROCESSOR] La cita {} ya estaba en estado {}. No se actualiza.",
+                            citaId,
+                            cita.estado
+                        )
                     }
                 } else {
                     logger.warn("[WEBHOOK_PROCESSOR] Se recibió notificación para una cita no encontrada: {}", citaId)
@@ -70,18 +75,5 @@ class PaymentWebhookService(
         } catch (e: Exception) {
             logger.error("[WEBHOOK_PROCESSOR] Error procesando notificación para Payment ID: {}", paymentId, e)
         }
-    }
-
-    private fun enviarNotificacionesPago(tutorId: UUID, citaId: UUID) {
-        notificationService.enviarNotificacion(
-            tutorId,
-            "¡Reserva Confirmada!",
-            "Tu pago fue aprobado y la cita $citaId quedó confirmada.",
-            mapOf("type" to "PAYMENT_CONFIRMED", "citaId" to citaId.toString())
-        )
-        notificationService.enviarNotificacionAStaff(
-            "Pago confirmado",
-            "Pago aprobado por webhook para la cita $citaId."
-        )
     }
 }

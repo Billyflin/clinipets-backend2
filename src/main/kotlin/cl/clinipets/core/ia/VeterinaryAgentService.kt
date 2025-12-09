@@ -54,7 +54,10 @@ class VeterinaryAgentService(
     private val clinicZoneId: ZoneId,
     private val otpService: cl.clinipets.identity.application.OtpService,
     private val client: GenAiClientWrapper,
-    @Value("\${gemini.model:gemini-2.0-flash-lite}") private val modelName: String,
+    @Value("\${ia.enabled:true}") private val iaEnabled: Boolean,
+    @Value("\${gh.model:openai/gpt-5-nano}") private val modelName: String,
+    @Value("\${gh.max-output-tokens:256}") private val maxOutputTokens: Int,
+    @Value("\${gh.temperature:0.2}") private val temperature: Float,
     private val agentTools: List<AgentTool>
 ) {
     private val logger = LoggerFactory.getLogger(VeterinaryAgentService::class.java)
@@ -67,6 +70,15 @@ class VeterinaryAgentService(
 
     fun procesarMensaje(telefono: String, mensajeUsuario: String): AgentResponse {
         logger.info("[IA_AGENT] Procesando mensaje para teléfono: $telefono")
+
+        if (!iaEnabled) {
+            return AgentResponse.Text("Hola, por ahora el asistente virtual está en pausa. Escríbenos por WhatsApp o llama a la clínica y te ayudamos al tiro.")
+        }
+
+        val mensaje = mensajeUsuario.trim()
+        if (mensaje.isEmpty()) {
+            return AgentResponse.Text("¿En qué te ayudo? Puedo agendar horas o darte precios de servicios.")
+        }
 
         val historial = prepararHistorial(telefono)
         val user = buscarUsuarioPorTelefono(telefono)
@@ -300,8 +312,8 @@ class VeterinaryAgentService(
 
     private fun prepararHistorial(telefono: String): MutableList<Content> {
         val historial = chatHistory.computeIfAbsent(telefono) { mutableListOf() }
-        if (historial.size > 20) {
-            historial.subList(0, historial.size - 10).clear()
+        if (historial.size > 12) {
+            historial.subList(0, historial.size - 12).clear()
         }
         return historial
     }
@@ -336,6 +348,7 @@ class VeterinaryAgentService(
         val systemPromptText = """
             Eres "CliniBot", el asistente virtual de la veterinaria "Clinipets" ubicada en Temuco (Sector Inés de Suárez).
             Tu tono es cercano, profesional, empático y adaptado a Chile.
+            RESPUESTA CORTA: Máximo 2 frases o una lista breve. Sin rodeos ni relleno.
 
             REGLAS DE ORO (IMPORTANTE):
             - PROHIBIDO pedir el número de teléfono. Ya lo conoces (es el ID de sesión). Si una herramienta falla por falta de datos, pide el dato específico (ej: nombre de mascota), pero nunca el teléfono.
@@ -381,6 +394,7 @@ class VeterinaryAgentService(
             - Si el usuario pregunta qué hacen, lista resumidamente los servicios disponibles.
             - Si el usuario pregunta por precios, búscalos usando la herramienta 'consultar_disponibilidad' o mira si ya te los entregó una consulta anterior. NO inventes precios.
             - Para reservar, SIEMPRE aclara que se requiere el pago de un abono online mediante el link que generarás.
+            - Si no hay una intención clara de agenda o información, responde con una pregunta corta para aclarar en máximo 2 frases.
         """.trimIndent()
 
         return Content.builder()
@@ -396,14 +410,15 @@ class VeterinaryAgentService(
         return GenerateContentConfig.builder()
             .tools(tools)
             .systemInstruction(systemInstructionContent)
-            .temperature(0.2f)
+            .temperature(temperature)
+            .maxOutputTokens(maxOutputTokens)
             .build()
     }
 
     private fun construirUserContent(mensajeUsuario: String): Content =
         Content.builder()
             .role("user")
-            .parts(listOf(Part.builder().text(mensajeUsuario).build()))
+            .parts(listOf(Part.builder().text(mensajeUsuario.trim()).build()))
             .build()
 
     private fun registrarConversacion(historial: MutableList<Content>, userContent: Content, textoFinal: String) {
@@ -475,18 +490,14 @@ class VeterinaryAgentService(
         resumenMascotas: String,
         listaServicios: String
     ): IaDashboardResult? {
+        if (!iaEnabled) return null
+
         val systemPrompt = """
-            Eres un veterinario amable de Clinipets (Chile). Responde SOLO en JSON válido con las claves:
-            {
-              "mensaje": "<texto breve y empático para el usuario>",
-              "serviciosIds": ["<uuid1>", "<uuid2>"]
-            }
-            Reglas:
-            - Usa tono cercano, positivo, y 2-3 oraciones máximo.
-            - Si hubo atención reciente, menciona a la mascota atendida o pregunta cómo sigue.
-            - Si no hay visitas recientes, recuerda control o vacunas de forma amable.
-            - serviciosIds debe contener exactamente 2 UUID de la lista entregada.
-            - No agregues texto fuera del JSON.
+            Eres veterinario de Clinipets (Chile).
+            Devuelve SOLO JSON en una línea, sin texto extra ni comillas sobrantes:
+            {"mensaje":"<breve y empático>","serviciosIds":["<uuid1>","<uuid2>"]}
+            Reglas: tono cercano, 2-3 oraciones máximo; si hubo atención reciente, menciónala; si no, sugiere control/vacunas; serviciosIds debe tener exactamente 2 UUID de la lista dada.
+            Si dudas o falta contexto, responde igual en JSON con serviciosIds vacíos.
         """.trimIndent()
 
         val userPrompt = """
@@ -511,16 +522,28 @@ class VeterinaryAgentService(
         val config = GenerateContentConfig.builder()
             .systemInstruction(systemContent)
             .responseMimeType("application/json")
-            .temperature(0.4f)
+            .temperature(0.2f)
             .build()
 
         return try {
+            logger.info(
+                "[IA_DASHBOARD] Enviando prompt. user={} resumenLen={} serviciosLen={}",
+                nombreUsuario,
+                resumenMascotas.length,
+                listaServicios.length
+            )
             val response = client.generateContent(modelName, listOf(userContent), config)
             val rawText = response.text() ?: return null
-            val parsed: Map<String, Any> = mapper.readValue(rawText)
-            val mensaje = parsed["mensaje"] as? String ?: return null
-            val serviciosIds = (parsed["serviciosIds"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
-            IaDashboardResult(mensaje.trim(), serviciosIds)
+            logger.info("[IA_DASHBOARD] Respuesta recibida len={} preview='{}'", rawText.length, rawText.take(200))
+            try {
+                val parsed: Map<String, Any> = mapper.readValue(rawText)
+                val mensaje = parsed["mensaje"] as? String ?: return null
+                val serviciosIds = (parsed["serviciosIds"] as? List<*>)?.mapNotNull { it?.toString() } ?: emptyList()
+                IaDashboardResult(mensaje.trim(), serviciosIds)
+            } catch (parseEx: Exception) {
+                logger.warn("[IA_DASHBOARD] Respuesta no JSON, usando fallback. raw='{}'", rawText.take(200))
+                IaDashboardResult(rawText.trim(), emptyList())
+            }
         } catch (e: Exception) {
             logger.error("[IA_DASHBOARD] Error generando dashboard para {}", nombreUsuario, e)
             null
@@ -547,7 +570,7 @@ class VeterinaryAgentService(
             - Diagnóstico: $diagnostico
             - Tratamiento: $tratamiento
 
-            Redacta un único mensaje listo para WhatsApp para el tutor.
+            Redacta un único mensaje listo para WhatsApp para el tutor. Sé breve (2-3 oraciones) y empático; incluye emojis.
         """.trimIndent()
 
         val systemContent = Content.builder()
