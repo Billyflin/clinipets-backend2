@@ -1,21 +1,15 @@
 package cl.clinipets.identity.application
 
 import cl.clinipets.core.config.AdminProperties
-import cl.clinipets.core.ia.VeterinaryAgentService
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.security.JwtService
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
-import cl.clinipets.core.integration.meta.WhatsAppClient
 import cl.clinipets.identity.api.ProfileResponse
 import cl.clinipets.identity.api.TokenResponse
 import cl.clinipets.identity.api.UserUpdateRequest
-import cl.clinipets.identity.domain.User
-import cl.clinipets.identity.domain.UserRepository
-import cl.clinipets.identity.domain.UserRole
-import cl.clinipets.identity.domain.AuthProvider
-import cl.clinipets.identity.domain.OtpTokenRepository
+import cl.clinipets.identity.domain.*
 import org.slf4j.LoggerFactory
 import org.springframework.security.crypto.password.PasswordEncoder
 import org.springframework.stereotype.Service
@@ -31,12 +25,10 @@ class AuthService(
     private val passwordEncoder: PasswordEncoder,
     private val jwtService: JwtService,
     private val googleTokenVerifier: GoogleTokenVerifier,
-    private val veterinaryAgentService: VeterinaryAgentService,
     private val adminProperties: AdminProperties,
     private val otpService: OtpService,
     private val accountMergeService: AccountMergeService,
     private val otpTokenRepository: OtpTokenRepository,
-    private val whatsAppClient: WhatsAppClient
 ) {
     private val logger = LoggerFactory.getLogger(AuthService::class.java)
     private val secureRandom = java.security.SecureRandom()
@@ -76,21 +68,6 @@ class AuthService(
             .orElseThrow { NotFoundException("Usuario no encontrado") }
 
         logger.info("[AUTH_SERVICE] Comparando nombres. Actual: '{}', Nuevo: '{}'", user.name, request.name)
-
-        if (user.name != request.name) {
-            logger.info("[AUTH_SERVICE] Cambio de nombre detectado. Solicitando validación IA...")
-
-            val esInapropiado = veterinaryAgentService.esNombreInapropiado(request.name)
-
-            logger.info("[AUTH_SERVICE] Resultado Validación IA: Inapropiado = {}", esInapropiado)
-
-            if (esInapropiado) {
-                logger.warn("[AUTH_SERVICE] Actualización rechazada por política de nombres. Nombre: {}", request.name)
-                throw BadRequestException("El nombre ingresado no cumple con las políticas de la comunidad (Validado por IA).")
-            }
-        } else {
-            logger.info("[AUTH_SERVICE] El nombre no ha cambiado, saltando validación IA.")
-        }
 
         user.name = request.name
         user.phone = request.phone
@@ -360,8 +337,6 @@ class AuthService(
                 used = false
             )
         )
-
-        whatsAppClient.enviarMensaje(phoneKey, "🔐 Tu código Clinipets es: *$code*")
     }
 
     @Transactional

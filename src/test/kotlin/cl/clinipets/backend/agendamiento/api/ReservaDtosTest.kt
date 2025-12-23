@@ -40,11 +40,10 @@ class ReservaDtosTest {
         val id = UUID.randomUUID()
         val fechaHoraInicio = Instant.now()
         val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
-        val estado = EstadoCita.PENDIENTE_PAGO
+        val estado = EstadoCita.CONFIRMADA
         val precioFinal = 10000
         val tutorId = UUID.randomUUID()
         val origen = OrigenCita.WEB
-        val paymentUrl = "http://payment.url"
         
         val detalleResponse = DetalleCitaResponse(
             id = UUID.randomUUID(),
@@ -61,14 +60,12 @@ class ReservaDtosTest {
             fechaHoraFin,
             estado,
             precioFinal,
-            0, // montoAbono
             precioFinal, // saldoPendiente
             listOf(detalleResponse),
             tutorId,
             origen,
             cl.clinipets.agendamiento.domain.TipoAtencion.CLINICA, // tipoAtencion
-            null, // direccion
-            paymentUrl
+            null // direccion
         )
 
         assertEquals(id, response.id)
@@ -80,11 +77,10 @@ class ReservaDtosTest {
         assertEquals("Servicio Test", response.detalles[0].nombreServicio)
         assertEquals(tutorId, response.tutorId)
         assertEquals(origen, response.origen)
-        assertEquals(paymentUrl, response.paymentUrl)
     }
 
     @Test
-    fun `Cita toResponse should map correctly with paymentUrl`() {
+    fun `Cita toResponse should map correctly`() {
         // Setup Mocks
         val servicioMock = mock(ServicioMedico::class.java)
         `when`(servicioMock.id).thenReturn(UUID.randomUUID())
@@ -97,7 +93,7 @@ class ReservaDtosTest {
         val citaId = UUID.randomUUID()
         val fechaHoraInicio = Instant.now()
         val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
-        val estado = EstadoCita.PENDIENTE_PAGO
+        val estado = EstadoCita.CONFIRMADA
         val precioFinal = 15000
         val tutorId = UUID.randomUUID()
         val origen = OrigenCita.APP
@@ -123,8 +119,7 @@ class ReservaDtosTest {
         )
         cita.detalles.add(detalle)
 
-        val paymentUrl = "http://mock.payment.url"
-        val response = cita.toResponse(paymentUrl)
+        val response = cita.toResponse()
 
         assertEquals(citaId, response.id)
         assertEquals(fechaHoraInicio, response.fechaHoraInicio)
@@ -136,6 +131,5 @@ class ReservaDtosTest {
         assertEquals(mascotaMock.id, response.detalles[0].mascotaId)
         assertEquals(tutorId, response.tutorId)
         assertEquals(origen, response.origen)
-        assertEquals(paymentUrl, response.paymentUrl)
     }
 }

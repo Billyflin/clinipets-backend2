@@ -25,13 +25,18 @@ class InventarioService(
         backoff = Backoff(delay = 50)
     )
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    fun consumirStock(servicioId: UUID, cantidad: Int = 1) {
+    fun consumirStock(servicioId: UUID, cantidad: Int = 1, referencia: String) {
         val servicio = servicioMedicoRepository.findById(servicioId)
             .orElseThrow { NotFoundException("Servicio no encontrado: $servicioId") }
 
         if (servicio.stock == null) return
 
-        logger.debug("[INVENTARIO] Consumiendo stock. Servicio: {}, Cantidad: {}, StockActual: {}", servicio.nombre, cantidad, servicio.stock)
+        logger.debug(
+            "[INVENTARIO] Consumiendo stock. Servicio: {}, Cantidad: {}, Referencia: {}",
+            servicio.nombre,
+            cantidad,
+            referencia
+        )
         if (servicio.stock!! < cantidad) {
             logger.warn("[INVENTARIO] Stock insuficiente para {}. Solicitado: {}, Disponible: {}", servicio.nombre, cantidad, servicio.stock)
             throw ConflictException("No hay stock suficiente para ${servicio.nombre}")
@@ -44,7 +49,7 @@ class InventarioService(
             logger.warn("[INVENTARIO_CONCURRENCIA] Falló la actualización de stock para {}. Se reintentará.", servicio.nombre)
             throw ex // Re-throw to trigger Retry
         }
-        logger.info("[INVENTARIO] Stock actualizado. Servicio: {}, NuevoStock: {}", servicio.nombre, servicio.stock)
+        logger.info("Stock de {} reducido manualmente por {}", servicio.nombre, referencia)
     }
 
     @Retryable(

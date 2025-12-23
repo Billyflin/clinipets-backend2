@@ -42,7 +42,8 @@ class PdfService(
     private val mascotaMediaRepository: MascotaMediaRepository,
     private val storageService: StorageService,
     private val clinicProperties: ClinicProperties,
-    private val clinicZoneId: ZoneId
+    private val clinicZoneId: ZoneId,
+    private val userRepository: cl.clinipets.identity.domain.UserRepository
 ) {
     private val logger = LoggerFactory.getLogger(PdfService::class.java)
 
@@ -54,6 +55,7 @@ class PdfService(
     private val sectionFont: Font = FontFactoryHelper.bold(12f)
     private val noteFont: Font = FontFactoryHelper.base(8f)
     private val headerFont: Font = FontFactoryHelper.bold(13f, Color(0, 122, 163))
+    private val vaccineFont: Font = FontFactoryHelper.bold(14f, Color(0, 100, 0))
 
     data class FinancialSummary(
         val servicioNombre: String,
@@ -76,6 +78,8 @@ class PdfService(
             logger.warn("[PDF] Acceso denegado. User {} no es dueño de la mascota {}", requester.email, mascota.id)
             throw UnauthorizedException("No tiene permiso para ver esta ficha.")
         }
+
+        val authorName = userRepository.findById(ficha.autorId).map { it.name }.orElse("Veterinario Tratante")
 
         // Buscar datos financieros relacionados
         val citaRelacionada = mascota.id?.let { buscarCitaRelacionada(it, ficha.fechaAtencion) }
@@ -109,10 +113,16 @@ class PdfService(
         addClinicalSection(document, "Tratamiento", ficha.tratamiento)
         ficha.observaciones?.let { addClinicalSection(document, "Observaciones", it) }
 
+        // Plan de Vacunación Destacado
+        if (ficha.esVacuna) {
+            addVaccineSection(document, ficha.nombreVacuna, ficha.fechaProximaVacuna)
+        }
+
         // Secciones Finales
         addFinancialSection(document, resumenFinanciero)
-        addFootNote(document)
         addPhotoIfExists(document, mascota.id, mascota.nombre)
+        addSignature(document, authorName)
+        addFootNote(document)
 
         document.close()
         return baos.toByteArray()
@@ -160,6 +170,58 @@ class PdfService(
         }
         table.addCell(infoCell)
 
+        document.add(table)
+    }
+
+    private fun addVaccineSection(document: Document, nombreVacuna: String?, fechaProxima: java.time.LocalDate?) {
+        val table = PdfPTable(1)
+        table.widthPercentage = 100f
+        table.setSpacingBefore(10f)
+        table.setSpacingAfter(10f)
+
+        val cell = PdfPCell().apply {
+            border = Rectangle.BOX
+            borderColor = Color(0, 100, 0)
+            borderWidth = 1.5f
+            backgroundColor = Color(240, 255, 240)
+            setPadding(10f)
+            horizontalAlignment = Element.ALIGN_CENTER
+        }
+
+        cell.addElement(Paragraph("PLAN DE VACUNACIÓN", vaccineFont).apply { alignment = Element.ALIGN_CENTER })
+
+        val detalle = StringBuilder()
+        nombreVacuna?.let { detalle.append("Vacuna administrada: $it\n") }
+        fechaProxima?.let {
+            val fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy")
+            detalle.append("PRÓXIMA DOSIS: ${it.format(fmt)}")
+        }
+
+        cell.addElement(Paragraph(detalle.toString(), boldFont).apply {
+            alignment = Element.ALIGN_CENTER
+            spacingBefore = 5f
+        })
+
+        table.addCell(cell)
+        document.add(table)
+    }
+
+    private fun addSignature(document: Document, authorName: String) {
+        val table = PdfPTable(1)
+        table.widthPercentage = 100f
+        table.setSpacingBefore(40f)
+        table.setSpacingAfter(10f)
+
+        val cell = PdfPCell().apply {
+            border = Rectangle.NO_BORDER
+            horizontalAlignment = Element.ALIGN_CENTER
+        }
+
+        cell.addElement(Paragraph("__________________________", baseFont).apply { alignment = Element.ALIGN_CENTER })
+        cell.addElement(Paragraph(authorName.uppercase(), boldFont).apply { alignment = Element.ALIGN_CENTER })
+        cell.addElement(Paragraph("Médico Veterinario", baseFont).apply { alignment = Element.ALIGN_CENTER })
+
+        table.addCell(cell)
         document.add(table)
     }
 
@@ -346,12 +408,9 @@ class PdfService(
         }
 
         val extras = max(cita.precioFinal - subtotalServicios, 0)
-        val saldoPendiente = when (cita.estado) {
-            EstadoCita.PENDIENTE_PAGO -> cita.precioFinal
-            EstadoCita.FINALIZADA, EstadoCita.CANCELADA -> 0 // Si finalizó, asumimos pagado
-            else -> max(cita.precioFinal - cita.montoAbono, 0)
-        }
-        val pagado = max(cita.precioFinal - saldoPendiente, 0)
+
+        // Si está finalizada, se pagó todo. Si no (Confirmada), no se ha pagado nada.
+        val pagado = if (cita.estado == EstadoCita.FINALIZADA) cita.precioFinal else 0
 
         return FinancialSummary(
             servicioNombre = serviciosLabel,

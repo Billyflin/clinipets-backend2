@@ -29,8 +29,6 @@ java {
 repositories { mavenCentral() }
 
 dependencies {
-    // Google GenAI SDK reciente, no cambiar
-    implementation("com.google.genai:google-genai:1.29.0")
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -39,8 +37,6 @@ dependencies {
     implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-hibernate6")
     implementation("org.jetbrains.kotlin:kotlin-reflect")
-    implementation("com.azure:azure-ai-inference:1.0.0-beta.1")
-    implementation("com.azure:azure-core-http-okhttp:1.13.2")
 
     implementation("org.springframework.retry:spring-retry")
     implementation("org.springframework:spring-aspects")
@@ -52,9 +48,6 @@ dependencies {
 
     implementation("com.google.guava:guava:32.0.1-jre")
     implementation("io.minio:minio:8.5.7")
-    implementation("com.mercadopago:sdk-java:2.8.0") {
-        exclude(group = "org.apache.maven.plugins", module = "maven-javadoc-plugin")
-    }
     implementation("com.github.librepdf:openpdf:1.3.39")
 
     // JWT
@@ -84,6 +77,7 @@ dependencies {
 }
 
 configurations.all {
+    exclude(group = "commons-logging", module = "commons-logging")
     resolutionStrategy {
         force(
             "com.squareup.okio:okio:3.4.0",

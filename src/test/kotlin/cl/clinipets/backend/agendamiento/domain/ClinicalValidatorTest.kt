@@ -66,7 +66,7 @@ class ClinicalValidatorTest {
         id = UUID.randomUUID(),
         nombre = "Firulais",
         especie = Especie.PERRO,
-        pesoActual = BigDecimal.TEN,
+        pesoActual = 10.0,
         raza = "Mestizo",
         sexo = Sexo.MACHO,
         esterilizado = false,

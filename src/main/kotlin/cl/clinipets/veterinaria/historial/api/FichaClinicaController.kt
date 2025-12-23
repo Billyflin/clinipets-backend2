@@ -6,13 +6,20 @@ import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.historial.application.FichaClinicaService
 import cl.clinipets.veterinaria.historial.application.PdfService
+import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import jakarta.validation.Valid
-import org.springframework.core.io.ByteArrayResource
-import org.springframework.http.HttpStatus
-import org.springframework.http.ResponseEntity
 import org.slf4j.LoggerFactory
+import org.springframework.core.io.ByteArrayResource
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
+import org.springframework.data.web.PageableDefault
 import org.springframework.http.HttpHeaders
+import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
+import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.web.bind.annotation.*
@@ -27,6 +34,12 @@ class FichaClinicaController(
 ) {
     private val logger = LoggerFactory.getLogger(FichaClinicaController::class.java)
 
+    @Operation(summary = "Crear ficha clínica (Admin/Staff)", operationId = "crearFicha")
+    @ApiResponses(
+        ApiResponse(responseCode = "201", description = "Ficha creada exitosamente"),
+        ApiResponse(responseCode = "400", description = "Datos inválidos"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
     @PostMapping
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     fun crearFicha(
@@ -39,13 +52,20 @@ class FichaClinicaController(
         return ResponseEntity.status(HttpStatus.CREATED).body(ficha)
     }
 
+    @Operation(summary = "Obtener historial médico paginado", operationId = "obtenerHistorial")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Historial obtenido exitosamente"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada"),
+        ApiResponse(responseCode = "403", description = "No tiene permiso para ver esta mascota")
+    )
     @GetMapping("/mascota/{mascotaId}")
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CLIENT')")
     fun obtenerHistorial(
         @PathVariable mascotaId: UUID,
+        @PageableDefault(size = 10, sort = ["fechaAtencion"], direction = Sort.Direction.DESC) pageable: Pageable,
         @AuthenticationPrincipal user: JwtPayload
-    ): ResponseEntity<List<FichaResponse>> {
-        logger.info("[HISTORIAL] Inicio. User: {}, MascotaID: {}", user.email, mascotaId)
+    ): ResponseEntity<Page<FichaResponse>> {
+        logger.info("[HISTORIAL] Inicio. User: {}, MascotaID: {}, Page: {}", user.email, mascotaId, pageable.pageNumber)
         
         // If user is CLIENT, must verify ownership
         if (user.role == UserRole.CLIENT) {
@@ -57,11 +77,16 @@ class FichaClinicaController(
              }
         }
 
-        val historial = fichaService.obtenerHistorial(mascotaId)
-        logger.info("[HISTORIAL] Fin - Registros: {}", historial.size)
+        val historial = fichaService.obtenerHistorial(mascotaId, pageable)
+        logger.info("[HISTORIAL] Fin - Registros: {}", historial.numberOfElements)
         return ResponseEntity.ok(historial)
     }
 
+    @Operation(summary = "Descargar PDF de ficha clínica", operationId = "descargarFichaPdf")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "PDF generado exitosamente"),
+        ApiResponse(responseCode = "404", description = "Ficha no encontrada")
+    )
     @GetMapping("/{fichaId}/pdf")
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CLIENT')")
     fun descargarFichaPdf(

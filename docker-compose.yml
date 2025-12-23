@@ -26,27 +26,11 @@ services:
     build: .
     environment:
       SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${DB_NAME}
-      SPRING_DATASOURCE_USERNAME: ${DB_USER}
-      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD}
-
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      MERCADOPAGO_ACCESS_TOKEN: ${MERCADOPAGO_ACCESS_TOKEN}
-      N8N_API_KEY: ${N8N_API_KEY}
-      META_ACCESS_TOKEN: ${META_ACCESS_TOKEN}
-      META_PHONE_NUMBER_ID: ${META_PHONE_NUMBER_ID}
-
-      IA_ENABLED: "true"
-      IA_PROVIDER: "github"
-      IA_STARTUP_PROBE_ENABLED: "true"
-      GH_BASE_URL: "https://models.github.ai/inference"
-      GH_MODEL: "openai/gpt-5-nano"
-      GITHUB_TOKEN: ${GITHUB_TOKEN}
-
-      SPRING_JACKSON_SERIALIZATION_WRITE_DATES_AS_TIMESTAMPS: "false"
-      SPRING_JACKSON_TIME_ZONE: "UTC"
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
     ports:
       - "8080:8080"
     depends_on:
@@ -58,7 +42,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    restart: unless-stopped
 
   # 4. SonarQube
   #  sonarqube:

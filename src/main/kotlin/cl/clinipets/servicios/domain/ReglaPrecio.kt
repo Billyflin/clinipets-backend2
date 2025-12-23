@@ -11,11 +11,11 @@ data class ReglaPrecio(
     @GeneratedValue(strategy = GenerationType.UUID)
     val id: UUID? = null,
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    val pesoMin: BigDecimal,
+    @Column(nullable = false)
+    val pesoMin: Double,
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    val pesoMax: BigDecimal,
+    @Column(nullable = false)
+    val pesoMax: Double,
 
     @Column(nullable = false)
     val precio: Int,

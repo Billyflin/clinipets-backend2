@@ -4,6 +4,8 @@ import cl.clinipets.agendamiento.application.ReservaService
 import cl.clinipets.agendamiento.domain.MetodoPago
 import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import jakarta.validation.Valid
 import org.slf4j.LoggerFactory
 import org.springframework.format.annotation.DateTimeFormat
@@ -26,6 +28,10 @@ class ReservaController(
     private val logger = LoggerFactory.getLogger(ReservaController::class.java)
 
     @Operation(summary = "Obtener resumen financiero diario (Staff/Admin)", operationId = "obtenerResumenDiario")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Resumen obtenido"),
+        ApiResponse(responseCode = "403", description = "Sin permisos")
+    )
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @GetMapping("/admin/resumen")
     fun obtenerResumenDiario(
@@ -37,6 +43,10 @@ class ReservaController(
     }
 
     @Operation(summary = "Crear reserva (Carrito)", operationId = "crearReserva")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Reserva creada"),
+        ApiResponse(responseCode = "400", description = "Datos inválidos")
+    )
     @PostMapping
     fun crear(
         @Valid @RequestBody request: ReservaCreateRequest,
@@ -53,10 +63,14 @@ class ReservaController(
             pagoTotal = request.pagoTotal
         )
         logger.info("[CREAR_RESERVA] Fin request - Exitoso. ID Cita: {}", result.cita.id)
-        return ResponseEntity.ok(result.cita.toResponse(result.paymentUrl))
+        return ResponseEntity.ok(result.cita.toResponse())
     }
 
     @Operation(summary = "Confirmar reserva", operationId = "confirmarReserva")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Reserva confirmada"),
+        ApiResponse(responseCode = "404", description = "Reserva no encontrada")
+    )
     @PatchMapping("/{id}/confirmar")
     fun confirmar(
         @PathVariable id: UUID,
@@ -65,10 +79,14 @@ class ReservaController(
         logger.info("[CONFIRMAR_RESERVA] Request. ID: {}", id)
         val cita = reservaService.confirmar(id, principal)
         logger.info("[CONFIRMAR_RESERVA] Fin request - Exitoso")
-        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+        return ResponseEntity.ok(cita.toResponse())
     }
 
     @Operation(summary = "Cancelar reserva", operationId = "cancelarReserva")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Reserva cancelada"),
+        ApiResponse(responseCode = "404", description = "Reserva no encontrada")
+    )
     @DeleteMapping("/{id}")
     fun cancelar(
         @PathVariable id: UUID,
@@ -77,10 +95,13 @@ class ReservaController(
         logger.info("[CANCELAR_RESERVA] Request. ID: {}", id)
         val cita = reservaService.cancelar(id, principal)
         logger.info("[CANCELAR_RESERVA] Fin request - Exitoso")
-        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+        return ResponseEntity.ok(cita.toResponse())
     }
 
     @Operation(summary = "Listar reservas", operationId = "listarReservas")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Lista de reservas"),
+    )
     @GetMapping
     fun listar(
         @AuthenticationPrincipal principal: JwtPayload
@@ -92,6 +113,10 @@ class ReservaController(
     }
 
     @Operation(summary = "Obtener reserva por ID", operationId = "obtenerReserva")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Reserva encontrada"),
+        ApiResponse(responseCode = "404", description = "Reserva no encontrada")
+    )
     @GetMapping("/{id}")
     fun obtener(
         @PathVariable id: UUID,
@@ -104,6 +129,10 @@ class ReservaController(
     }
 
     @Operation(summary = "Obtener historial de citas de una mascota", operationId = "historialMascota")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Historial obtenido"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
     @GetMapping("/mascota/{mascotaId}")
     fun historialMascota(
         @PathVariable mascotaId: UUID,
@@ -116,6 +145,10 @@ class ReservaController(
     }
 
     @Operation(summary = "Finalizar cita y registrar pago saldo (Staff/Admin)", operationId = "finalizarCita")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Cita finalizada"),
+        ApiResponse(responseCode = "400", description = "Error en finalización")
+    )
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @PostMapping("/{id}/finalizar")
     fun finalizar(
@@ -127,10 +160,14 @@ class ReservaController(
         logger.info("[FINALIZAR_CITA] Request. ID: {}, User: {}, Metodo: {}", id, principal.email, metodoPago)
         val cita = reservaService.finalizarCita(id, metodoPago, principal)
         logger.info("[FINALIZAR_CITA] Fin request - Exitoso")
-        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+        return ResponseEntity.ok(cita.toResponse())
     }
 
     @Operation(summary = "Cancelar reserva (Staff/Admin)", operationId = "cancelarReservaPorStaff")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Cita cancelada por staff"),
+        ApiResponse(responseCode = "403", description = "Sin permisos")
+    )
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @DeleteMapping("/gestion/{id}")
     fun cancelarPorStaff(
@@ -140,10 +177,13 @@ class ReservaController(
         logger.info("[CANCELAR_RESERVA_STAFF] Request. ID: {}, User: {}", id, principal.email)
         val cita = reservaService.cancelarPorStaff(id, principal)
         logger.info("[CANCELAR_RESERVA_STAFF] Fin request - Exitoso")
-        return ResponseEntity.ok(cita.toResponse(cita.paymentUrl))
+        return ResponseEntity.ok(cita.toResponse())
     }
 
     @Operation(summary = "Obtener agenda diaria (Staff/Admin)", operationId = "obtenerAgendaDiaria")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Agenda obtenida")
+    )
     @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
     @GetMapping("/agenda")
     fun obtenerAgendaDiaria(

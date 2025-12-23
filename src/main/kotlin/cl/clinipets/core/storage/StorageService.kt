@@ -33,14 +33,28 @@ class StorageService(
             val fileName = "${UUID.randomUUID()}.$extension"
             val objectName = "$folder/$fileName"
 
-            logger.info("[STORAGE] Subiendo archivo: {} a bucket: {}/{}", originalFilename, bucketName, objectName)
+            val contentType = file.contentType?.takeIf { it.isNotBlank() } ?: when (extension.lowercase()) {
+                "jpg", "jpeg" -> "image/jpeg"
+                "png" -> "image/png"
+                "pdf" -> "application/pdf"
+                "webp" -> "image/webp"
+                else -> "application/octet-stream"
+            }
+
+            logger.info(
+                "[STORAGE] Subiendo archivo: {} a bucket: {}/{} (Type: {})",
+                originalFilename,
+                bucketName,
+                objectName,
+                contentType
+            )
 
             minioClient.putObject(
                 PutObjectArgs.builder()
                     .bucket(bucketName)
                     .`object`(objectName)
                     .stream(file.inputStream, file.size, -1)
-                    .contentType(file.contentType)
+                    .contentType(contentType)
                     .build()
             )
 

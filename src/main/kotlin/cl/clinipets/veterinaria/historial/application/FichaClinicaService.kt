@@ -10,6 +10,8 @@ import cl.clinipets.veterinaria.historial.api.toResponse
 import cl.clinipets.veterinaria.historial.domain.FichaClinica
 import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
 import org.slf4j.LoggerFactory
+import org.springframework.data.domain.Page
+import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
@@ -28,15 +30,15 @@ class FichaClinicaService(
         val mascota = mascotaRepository.findById(request.mascotaId)
             .orElseThrow { NotFoundException("Mascota no encontrada con ID: ${request.mascotaId}") }
 
-        // Actualizar peso si viene registrado
-        if (request.pesoRegistrado != null) {
-            val nuevoPeso = java.math.BigDecimal.valueOf(request.pesoRegistrado)
+        // Actualizar peso de la mascota si viene en la ficha
+        if (request.pesoRegistrado != null && request.pesoRegistrado > 0) {
+            val nuevoPeso = request.pesoRegistrado
             logger.info("[FICHA_SERVICE] Actualizando peso mascota: {} -> {}", mascota.pesoActual, nuevoPeso)
             mascota.pesoActual = nuevoPeso
-            mascotaRepository.save(mascota)
-
-            // Recálculo de precio en Cita Activa (si existe)
-            recalcularPrecioCitaActiva(mascota)
+            // También se podría persistir mascotaRepository.save(mascota), 
+            // pero al estar en transacción y ser entidad gestionada, Hibernate lo hace al commit.
+            // Para asegurar el evento de auditoría en Mascota si lo hubiera, guardamos explícito.
+            // mascotaRepository.save(mascota) 
         }
 
         val ficha = fichaRepository.save(
@@ -99,13 +101,13 @@ class FichaClinicaService(
     }
 
     @Transactional(readOnly = true)
-    fun obtenerHistorial(mascotaId: UUID): List<FichaResponse> {
+    fun obtenerHistorial(mascotaId: UUID, pageable: Pageable): Page<FichaResponse> {
         // Verificamos que la mascota exista
         if (!mascotaRepository.existsById(mascotaId)) {
             logger.warn("[FICHA_SERVICE] Intento de obtener historial de mascota inexistente: {}", mascotaId)
             throw NotFoundException("Mascota no encontrada con ID: $mascotaId")
         }
-        return fichaRepository.findAllByMascotaIdOrderByFechaAtencionDesc(mascotaId)
+        return fichaRepository.findAllByMascotaIdOrderByFechaAtencionDesc(mascotaId, pageable)
             .map { it.toResponse() }
     }
 }

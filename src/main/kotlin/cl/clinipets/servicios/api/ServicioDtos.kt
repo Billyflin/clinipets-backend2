@@ -9,8 +9,8 @@ import java.util.UUID
 
 data class ReglaPrecioDto(
     val id: UUID,
-    val pesoMin: BigDecimal,
-    val pesoMax: BigDecimal,
+    val pesoMin: Double,
+    val pesoMax: Double,
     val precio: Int
 )
 

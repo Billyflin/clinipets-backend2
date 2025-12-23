@@ -1,6 +1,5 @@
 package cl.clinipets.identity.application
 
-import cl.clinipets.core.integration.meta.WhatsAppClient
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.OtpToken
@@ -15,8 +14,7 @@ import java.time.temporal.ChronoUnit
 
 @Service
 class OtpService(
-    private val otpTokenRepository: OtpTokenRepository,
-    private val whatsAppClient: WhatsAppClient
+    private val otpTokenRepository: OtpTokenRepository
 ) {
     private val logger = LoggerFactory.getLogger(OtpService::class.java)
     private val random = SecureRandom()
@@ -83,7 +81,6 @@ class OtpService(
         }
 
         logger.info("[OTP] Código {} generado para {} (purpose={})", code, phone, purpose)
-        whatsAppClient.enviarMensaje(phone, "🔐 Tu código de acceso Clinipets es: *$code*. No lo compartas.")
         return code
     }
 

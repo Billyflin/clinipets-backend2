@@ -17,7 +17,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 class SecurityConfig(
-    private val jwtAuthenticationFilter: JwtAuthenticationFilter
+    private val firebaseFilter: FirebaseFilter
 ) {
     @Bean
     fun securityFilterChain(http: HttpSecurity): SecurityFilterChain {
@@ -27,24 +27,20 @@ class SecurityConfig(
             .authorizeHttpRequests {
                 it.requestMatchers(
                     "/",
-                    "/api/auth/refresh",
-                    "/api/auth/google",
-                    "/api/auth/otp/**",
-                    "/api/v1/servicios/**",
-                    "/api/v1/disponibilidad/**",
-                    "/api/v1/meta/webhook",
+                    "/api/auth/**", // Allow all auth endpoints (sync, etc)
                     "/api/public/**",
                     "/actuator/health",
                     "/index.html",
                     "/google-login.html",
                     "/privacy.html",
                     "/static/**",
-                    "/v3/api-docs"
+                    "/v3/api-docs/**",
+                    "/swagger-ui/**"
                 ).permitAll()
                     .requestMatchers("/api/v1/reservas").authenticated()
                     .anyRequest().authenticated()
             }
-            .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter::class.java)
+            .addFilterBefore(firebaseFilter, UsernamePasswordAuthenticationFilter::class.java)
         return http.build()
     }
 

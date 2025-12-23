@@ -41,7 +41,7 @@ class MascotaService(
                 chipIdentificador = request.chipIdentificador,
                 temperamento = request.temperamento,
                 // Valores por defecto para permitir registro flexible
-                pesoActual = request.pesoActual ?: BigDecimal("-1.0"),
+                pesoActual = request.pesoActual ?: -1.0,
                 fechaNacimiento = request.fechaNacimiento ?: LocalDate.of(1900, 1, 1),
                 tutor = user
             )

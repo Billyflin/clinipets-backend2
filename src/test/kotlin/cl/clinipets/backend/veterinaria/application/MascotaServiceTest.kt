@@ -86,7 +86,7 @@ class MascotaServiceTest(
                 especie = Especie.PERRO,
                 raza = "Mestizo",
                 sexo = Sexo.MACHO,
-                pesoActual = BigDecimal("8.5"),
+                pesoActual = 8.5,
                 fechaNacimiento = LocalDate.of(2022, 5, 10)
             ),
             tutorPayload
@@ -107,7 +107,7 @@ class MascotaServiceTest(
                 especie = Especie.GATO,
                 raza = "Mestizo",
                 sexo = Sexo.HEMBRA,
-                pesoActual = BigDecimal("4.2"),
+                pesoActual = 4.2,
                 fechaNacimiento = LocalDate.of(2023, 3, 15)
             ),
             tutorPayload

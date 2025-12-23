@@ -21,8 +21,8 @@ data class Mascota(
     @Column(nullable = false, length = 16)
     val especie: Especie,
 
-    @Column(nullable = false, precision = 10, scale = 2)
-    var pesoActual: BigDecimal,
+    @Column(nullable = false)
+    var pesoActual: Double,
 
     @Column(nullable = false)
     var raza: String = "Mestizo",

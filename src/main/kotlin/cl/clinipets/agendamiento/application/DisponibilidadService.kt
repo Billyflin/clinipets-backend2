@@ -42,7 +42,7 @@ class DisponibilidadService(
 
         logger.debug(">>> Buscando citas en DB entre $startOfDay y $endOfDay")
 
-        val citasDia = citaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)
+        val citasDia = citaRepository.findOverlappingCitas(startOfDay, endOfDay)
         logger.info(">>> Citas encontradas en conflicto: ${citasDia.size}")
 
         val bloqueosDia = bloqueoAgendaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)

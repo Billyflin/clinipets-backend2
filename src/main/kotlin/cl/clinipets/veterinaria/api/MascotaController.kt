@@ -3,6 +3,8 @@ package cl.clinipets.veterinaria.api
 import cl.clinipets.veterinaria.application.MascotaService
 import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
+import io.swagger.v3.oas.annotations.responses.ApiResponse
+import io.swagger.v3.oas.annotations.responses.ApiResponses
 import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
@@ -27,6 +29,10 @@ class MascotaController(
     private val logger = LoggerFactory.getLogger(MascotaController::class.java)
 
     @Operation(summary = "Crear mascota", operationId = "crearMascota")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Mascota creada"),
+        ApiResponse(responseCode = "400", description = "Datos inválidos")
+    )
     @PostMapping
     fun crear(
         @Valid @RequestBody request: MascotaCreateRequest,
@@ -39,6 +45,9 @@ class MascotaController(
     }
 
     @Operation(summary = "Listar mascotas", operationId = "listarMascotas")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Lista de mascotas")
+    )
     @GetMapping
     fun listar(
         @AuthenticationPrincipal principal: JwtPayload
@@ -50,6 +59,10 @@ class MascotaController(
     }
 
     @Operation(summary = "Obtener mascota", operationId = "obtenerMascota")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Mascota encontrada"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
     @GetMapping("/{id}")
     fun obtener(
         @PathVariable id: UUID,
@@ -62,6 +75,10 @@ class MascotaController(
     }
 
     @Operation(summary = "Actualizar mascota", operationId = "actualizarMascota")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Mascota actualizada"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
     @PutMapping("/{id}")
     fun actualizar(
         @PathVariable id: UUID,
@@ -75,6 +92,11 @@ class MascotaController(
     }
 
     @Operation(summary = "Actualizar datos clínicos (Staff/Admin)", operationId = "actualizarDatosClinicos")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Datos clínicos actualizados"),
+        ApiResponse(responseCode = "403", description = "Sin permisos"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
     @PatchMapping("/{id}/clinico")
     @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
     fun actualizarDatosClinicos(
@@ -88,6 +110,10 @@ class MascotaController(
     }
 
     @Operation(summary = "Eliminar mascota", operationId = "eliminarMascota")
+    @ApiResponses(
+        ApiResponse(responseCode = "204", description = "Mascota eliminada"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
     @DeleteMapping("/{id}")
     fun eliminar(
         @PathVariable id: UUID,

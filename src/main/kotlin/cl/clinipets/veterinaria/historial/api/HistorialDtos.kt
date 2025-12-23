@@ -1,6 +1,7 @@
 package cl.clinipets.veterinaria.historial.api
 
 import cl.clinipets.veterinaria.historial.domain.FichaClinica
+import jakarta.validation.constraints.Future
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import java.time.Instant
@@ -21,7 +22,9 @@ data class FichaCreateRequest(
     val diagnostico: String? = null,
     val esVacuna: Boolean = false,
     val nombreVacuna: String? = null,
+    @field:Future
     val fechaProximaVacuna: LocalDate? = null,
+    @field:Future
     val fechaProximoControl: LocalDate? = null,
     val fechaDesparasitacion: LocalDate? = null
 )

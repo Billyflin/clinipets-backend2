@@ -20,9 +20,6 @@ import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRole
-import cl.clinipets.pagos.application.EstadoPagoMP
-import cl.clinipets.pagos.application.PagoItem
-import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.application.InventarioService
 import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
@@ -37,7 +34,7 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 import java.util.UUID
 
-data class ReservaResult(val cita: Cita, val paymentUrl: String?)
+data class ReservaResult(val cita: Cita)
 
 @Service
 class ReservaService(
@@ -45,7 +42,6 @@ class ReservaService(
     private val disponibilidadService: DisponibilidadService,
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val mascotaRepository: MascotaRepository,
-    private val pagoService: PagoService,
     private val inventarioService: InventarioService,
     private val pricingCalculator: PricingCalculator,
     private val clinicalValidator: ClinicalValidator,
@@ -73,25 +69,33 @@ class ReservaService(
 
         val totalCitas = citasValidas.size
         val citasFinalizadas = citasValidas.count { it.estado == EstadoCita.FINALIZADA }
-        
-        // Recaudación Online: Abonos de todas las citas válidas (pendientes, confirmadas, finalizadas, etc)
-        // Asumimos que el abono se pagó al reservar.
-        val recaudacionOnline = citasValidas.sumOf { it.montoAbono }
-        
-        // Recaudación Mostrador: Saldo restante (Total - Abono) SOLO de las finalizadas (que son las que pagaron el resto)
-        val recaudacionMostrador = citasValidas
-            .filter { it.estado == EstadoCita.FINALIZADA }
-            .sumOf { it.precioFinal - it.montoAbono }
-            
-        val totalGeneral = recaudacionOnline + recaudacionMostrador
 
-        logger.info("[RESUMEN_DIARIO] Total: $totalGeneral (Online: $recaudacionOnline, Mostrador: $recaudacionMostrador)")
+        // 1. Recaudación Realizada (Solo finalizadas)
+        val recaudacionTotalRealizada = citasValidas
+            .filter { it.estado == EstadoCita.FINALIZADA }
+            .sumOf { it.precioFinal }
+
+        // 2. Proyección Pendiente (Confirmadas pero no finalizadas)
+        val proyeccionPendiente = citasValidas
+            .filter { it.estado == EstadoCita.CONFIRMADA }
+            .sumOf { it.precioFinal }
+
+        // 3. Desglose de Métodos de Pago (Solo finalizadas)
+        val desgloseMetodosPago = citasValidas
+            .filter { it.estado == EstadoCita.FINALIZADA && it.metodoPagoSaldo != null }
+            .groupingBy { it.metodoPagoSaldo!! }
+            .eachCount()
+
+        val totalGeneral = recaudacionTotalRealizada
+
+        logger.info("[RESUMEN_DIARIO] Realizado: $recaudacionTotalRealizada, Proyectado: $proyeccionPendiente")
 
         return ResumenDiarioResponse(
             totalCitas = totalCitas,
             citasFinalizadas = citasFinalizadas,
-            recaudacionOnline = recaudacionOnline,
-            recaudacionMostrador = recaudacionMostrador,
+            recaudacionTotalRealizada = recaudacionTotalRealizada,
+            proyeccionPendiente = proyeccionPendiente,
+            desgloseMetodosPago = desgloseMetodosPago,
             totalGeneral = totalGeneral
         )
     }
@@ -113,13 +117,28 @@ class ReservaService(
              throw BadRequestException("Debe especificar una dirección para atención a domicilio")
         }
 
+        // --- BATCH FETCHING ---
+        val serviciosIds = detallesRequest.map { it.servicioId }.toSet()
+        val mascotasIds = detallesRequest.mapNotNull { it.mascotaId }.toSet()
+
+        val serviciosMap = servicioMedicoRepository.findAllById(serviciosIds).associateBy { it.id!! }
+        val mascotasMap = if (mascotasIds.isNotEmpty()) {
+            mascotaRepository.findAllById(mascotasIds).associateBy { it.id!! }
+        } else {
+            emptyMap()
+        }
+
+        // Verify all services exist
+        val missingServices = serviciosIds - serviciosMap.keys
+        if (missingServices.isNotEmpty()) {
+            throw NotFoundException("Servicios no encontrados: $missingServices")
+        }
+
         // --- PROMOCIONES ---
         val fechaCita = fechaHoraInicio.atZone(clinicZoneId).toLocalDate()
-        val serviciosEnCarritoIds = detallesRequest.map { it.servicioId }.toSet()
         // -------------------
 
         var totalPrecio = 0
-        val abonos = mutableListOf<Int>()
         var duracionTotalMinutos = 0L
 
         val tempList = mutableListOf<TempDetalle>()
@@ -127,49 +146,44 @@ class ReservaService(
         logger.debug(">>> [CREAR_RESERVA] Procesando items del carrito...")
 
         for (req in detallesRequest) {
-            val servicio = servicioMedicoRepository.findById(req.servicioId)
-                .orElseThrow { NotFoundException("Servicio no encontrado: ${req.servicioId}") }
+            val servicio = serviciosMap[req.servicioId]!! // Safe due to check above
 
             if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
 
-            // Delegate inventory management
-            inventarioService.consumirStock(servicio.id!!)
+            // Delegate inventory management (MOVIDO: Se hace después de guardar para tener el ID)
+            // inventarioService.consumirStock(servicio.id!!)
 
             var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
 
             if (servicio.categoria == CategoriaServicio.PRODUCTO) {
                 if (req.mascotaId != null) {
-                    mascota = mascotaRepository.findById(req.mascotaId)
-                        .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
+                    mascota = mascotasMap[req.mascotaId]
+                        ?: throw NotFoundException("Mascota no encontrada: ${req.mascotaId}")
+                    
                     if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
                 }
                 duracionTotalMinutos += servicio.duracionMinutos
             } else {
                 if (req.mascotaId == null) throw BadRequestException("El servicio ${servicio.nombre} requiere especificar una mascota")
 
-                mascota = mascotaRepository.findById(req.mascotaId)
-                    .orElseThrow { NotFoundException("Mascota no encontrada: ${req.mascotaId}") }
+                mascota = mascotasMap[req.mascotaId]
+                    ?: throw NotFoundException("Mascota no encontrada: ${req.mascotaId}")
 
                 if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
 
-                clinicalValidator.validarRequisitosClinicos(servicio, mascota, serviciosEnCarritoIds)
+                clinicalValidator.validarRequisitosClinicos(servicio, mascota, serviciosIds)
                 duracionTotalMinutos += servicio.duracionMinutos
             }
 
             val precioCalculado = pricingCalculator.calcularPrecioFinal(servicio, mascota, fechaCita)
-            abonos.add(precioCalculado.abono)
 
-            logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: ${precioCalculado.precioFinal} | Abono: ${precioCalculado.abono}")
+            logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: ${precioCalculado.precioFinal}")
 
             totalPrecio += precioCalculado.precioFinal
             tempList.add(TempDetalle(servicio, mascota, precioCalculado.precioFinal))
         }
 
-        // Calculate final deposit
-        val abonoMinimo = abonos.maxOrNull() ?: 0
-        val montoAbonoFinal = if (pagoTotal) totalPrecio else abonoMinimo
-
-        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Total: $totalPrecio. AbonoMin: $abonoMinimo. A Cobrar: $montoAbonoFinal")
+        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Total: $totalPrecio.")
 
         // Validate Availability for the total duration
         if (duracionTotalMinutos > 0) {
@@ -196,9 +210,8 @@ class ReservaService(
             val cita = Cita(
                 fechaHoraInicio = fechaNormalizada,
                 fechaHoraFin = fechaHoraFin,
-                estado = EstadoCita.PENDIENTE_PAGO,
+                estado = EstadoCita.CONFIRMADA,
                 precioFinal = totalPrecio,
-                montoAbono = montoAbonoFinal,
                 tutorId = tutor.userId,
                 origen = origen,
                 tipoAtencion = tipoAtencion,
@@ -220,11 +233,13 @@ class ReservaService(
             val guardada = citaRepository.save(cita)
             logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
 
-            val itemsPago = buildItemsPago(tempList, pagoTotal, montoAbonoFinal)
-            val paymentUrl = pagoService.crearPreferencia(itemsPago, guardada.id!!.toString())
-            guardada.paymentUrl = paymentUrl
+            // CONSUMIR STOCK AHORA QUE TENEMOS ID
+            guardada.detalles.forEach { detalle ->
+                inventarioService.consumirStock(detalle.servicio.id!!, 1, "creación de Cita ${guardada.id}")
+            }
+
             eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
-            return ReservaResult(guardada, paymentUrl)
+            return ReservaResult(guardada)
         } else {
             // Caso de productos sin duración (Venta directa o retiro)
             logger.info(">>> [CREAR_RESERVA] Duración 0 detectada (Solo productos). Saltando validación de agenda estricta.")
@@ -232,9 +247,8 @@ class ReservaService(
             val cita = Cita(
                 fechaHoraInicio = fechaHoraInicio,
                 fechaHoraFin = fechaHoraInicio,
-                estado = EstadoCita.PENDIENTE_PAGO,
+                estado = EstadoCita.CONFIRMADA,
                 precioFinal = totalPrecio,
-                montoAbono = montoAbonoFinal,
                 tutorId = tutor.userId,
                 origen = origen,
                 tipoAtencion = tipoAtencion,
@@ -252,11 +266,13 @@ class ReservaService(
             }
             val guardada = citaRepository.save(cita)
 
-            val itemsPago = buildItemsPago(tempList, pagoTotal, montoAbonoFinal)
-            val paymentUrl = pagoService.crearPreferencia(itemsPago, guardada.id!!.toString())
-            guardada.paymentUrl = paymentUrl
+            // CONSUMIR STOCK AHORA QUE TENEMOS ID
+            guardada.detalles.forEach { detalle ->
+                inventarioService.consumirStock(detalle.servicio.id!!, 1, "creación de Cita ${guardada.id}")
+            }
+
             eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
-            return ReservaResult(guardada, paymentUrl)
+            return ReservaResult(guardada)
         }
     }
 
@@ -270,7 +286,8 @@ class ReservaService(
         }
         cita.estado = EstadoCita.CONFIRMADA
         val saved = citaRepository.save(cita)
-        logger.info("[CONFIRMAR_RESERVA] Cita confirmada exitosamente")
+
+        logger.info("AUDIT: Cita $id movida a CONFIRMADA por ${tutor.email}")
         eventPublisher.publishEvent(ReservaConfirmadaEvent(saved.id!!))
         return saved
     }
@@ -295,7 +312,8 @@ class ReservaService(
 
         cita.estado = EstadoCita.CANCELADA
         val saved = citaRepository.save(cita)
-        logger.info("[CANCELAR_RESERVA] Cita cancelada exitosamente")
+
+        logger.info("AUDIT: Cita $id movida a CANCELADA por ${tutor.email}")
         eventPublisher.publishEvent(ReservaCanceladaEvent(saved.id!!, "El tutor canceló la reserva"))
         return saved
     }
@@ -313,24 +331,7 @@ class ReservaService(
     @Transactional
     fun listar(tutor: JwtPayload): List<CitaDetalladaResponse> {
         val citas = citaRepository.findAllByTutorIdOrderByFechaHoraInicioDesc(tutor.userId)
-
-        val pendientesRecientes = citas
-            .filter { it.estado == EstadoCita.PENDIENTE_PAGO }
-            .sortedByDescending { it.createdAt }
-            .take(3)
-
-        pendientesRecientes.forEach { cita ->
-            val estadoPago = pagoService.consultarEstadoPago(cita.id!!.toString())
-            if (estadoPago.estado == EstadoPagoMP.APROBADO) {
-                cita.estado = EstadoCita.CONFIRMADA
-                cita.mpPaymentId = estadoPago.paymentId
-                val saved = citaRepository.save(cita)
-                logger.info("Auto-healing listado: Cita {} confirmada", cita.id)
-                eventPublisher.publishEvent(ReservaConfirmadaEvent(saved.id!!))
-            }
-        }
-
-        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
+        return citas.map { it.toDetalladaResponse() }
     }
 
     @Transactional
@@ -345,9 +346,8 @@ class ReservaService(
                 throw UnauthorizedException("No tienes permiso para ver esta reserva")
             }
         }
-        val citaVerificada = autoHealPago(cita)
         logger.info("[OBTENER_RESERVA] Acceso permitido. Retornando detalle.")
-        return citaVerificada.toDetalladaResponse(citaVerificada.paymentUrl)
+        return cita.toDetalladaResponse()
     }
 
     @Transactional
@@ -367,8 +367,7 @@ class ReservaService(
 
         val citas = citaRepository.findAllByMascotaId(mascotaId)
         logger.info("[HISTORIAL_MASCOTA] Encontradas {} citas para mascota {}", citas.size, mascotaId)
-        val citasVerificadas = citas.map { autoHealPago(it) }
-        return citasVerificadas.map { it.toDetalladaResponse(it.paymentUrl) }
+        return citas.map { it.toDetalladaResponse() }
     }
 
     @Transactional
@@ -388,28 +387,18 @@ class ReservaService(
             throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
         }
 
-        val saldoPendiente = cita.precioFinal - cita.montoAbono
-
-        if (saldoPendiente > 0 && metodoPago == MetodoPago.MERCADO_PAGO_LINK) {
-            logger.info("[FINALIZAR_CITA] Generando link de pago para saldo pendiente: {}", saldoPendiente)
-            val citaIdCorto = cita.id?.toString()?.take(8) ?: "sin-id"
-            val saldoItem =
-                listOf(PagoItem(titulo = "Saldo Pendiente Cita #$citaIdCorto", precioUnitario = saldoPendiente))
-            val paymentUrl = pagoService.crearPreferencia(saldoItem, "SALDO-${cita.id}")
-            cita.paymentUrl = paymentUrl
-            cita.estado = EstadoCita.POR_PAGAR
-            
-            citaRepository.save(cita)
-            return cita
+        if (cita.fechaHoraInicio.isAfter(Instant.now())) {
+            logger.warn("[FINALIZAR_CITA] Intento de finalizar cita futura: {}", cita.fechaHoraInicio)
+            throw BadRequestException("No se puede finalizar una cita futura")
         }
 
-        // For other methods or if balance is 0, finalize immediately
+        // Finalize immediately
         cita.metodoPagoSaldo = metodoPago
         cita.staffFinalizadorId = staff.userId
         cita.estado = EstadoCita.FINALIZADA
         
         val saved = citaRepository.save(cita)
-        logger.info("[FINALIZAR_CITA] Cita finalizada correctamente. Saldo pendiente virtualmente en 0.")
+        logger.info("AUDIT: Cita $id movida a FINALIZADA por staff ${staff.email}")
         return saved
     }
 
@@ -424,34 +413,17 @@ class ReservaService(
             throw UnauthorizedException("No tienes permisos para realizar esta acción")
         }
 
-        // 2. Reembolso si aplica
-        if (cita.mpPaymentId != null) {
-            try {
-                logger.info("[CANCELAR_STAFF] Procesando reembolso para PaymentID: {}", cita.mpPaymentId)
-                val reembolsoExitoso = pagoService.reembolsar(cita.mpPaymentId!!)
-                if (reembolsoExitoso) {
-                    logger.info("[CANCELAR_STAFF] Reembolso para cita {} procesado exitosamente.", cita.id)
-                    // 3. Generar cupón de compensación
-                    cita.tokenCompensacion = "DISCULPA-${UUID.randomUUID().toString().substring(0, 8).uppercase()}"
-                    logger.info("[CANCELAR_STAFF] Cupón generado: {}", cita.tokenCompensacion)
-                } else {
-                    logger.error("[CANCELAR_STAFF] El servicio de pago devolvió 'false' para el reembolso de la cita {}. Requiere revisión manual.", citaId)
-                }
-            } catch (e: Exception) {
-                logger.error("[CANCELAR_STAFF] Fallo reembolso automático para cita ID {}, requiere revisión manual.", citaId, e)
-            }
-        }
-
-        // 4. Devolver stock
+        // 2. Devolver stock
         reponerStock(cita)
 
-        // 5. Cambiar estado
+        // 3. Cambiar estado
         cita.estado = EstadoCita.CANCELADA
 
-        // 6. Guardar y retornar
+        // 4. Guardar y retornar
         val saved = citaRepository.save(cita)
         saved.detalles.size // Forzar carga de detalles
-        logger.info("[CANCELAR_STAFF] Cita cancelada correctamente")
+
+        logger.info("AUDIT: Cita $citaId movida a CANCELADA (Admin) por staff ${staff.email}")
         eventPublisher.publishEvent(ReservaCanceladaEvent(saved.id!!, "Cancelación realizada por el staff"))
         return saved
     }
@@ -463,80 +435,6 @@ class ReservaService(
 
         val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(startOfDay, endOfDay)
 
-        return citas.map { it.toDetalladaResponse(it.paymentUrl) }
-    }
-
-    @Transactional
-    fun cancelarReservasExpiradas() {
-        val expiracion = Instant.now().minus(30, ChronoUnit.MINUTES)
-        logger.info("[CLEANUP] Buscando reservas pendientes creadas antes de {}", expiracion)
-
-        val expiradas = citaRepository.findByEstadoAndCreatedAtBefore(EstadoCita.PENDIENTE_PAGO, expiracion)
-        
-        if (expiradas.isEmpty()) {
-            logger.info("[CLEANUP] No se encontraron reservas expiradas.")
-            return
-        }
-
-        logger.info("[CLEANUP] Encontradas {} reservas expiradas. Procediendo a cancelar...", expiradas.size)
-
-        for (cita in expiradas) {
-            try {
-                logger.info("[CLEANUP] Cancelando cita ID: {} (Creada: {})", cita.id, cita.createdAt)
-                
-                // Replicar lógica de cancelación: Reponer Stock y cambiar estado
-                reponerStock(cita)
-                cita.estado = EstadoCita.CANCELADA
-                citaRepository.save(cita)
-                
-            } catch (e: Exception) {
-                logger.error("[CLEANUP] Error al cancelar cita expirada {}", cita.id, e)
-            }
-        }
-        logger.info("[CLEANUP] Proceso finalizado.")
-    }
-
-    private fun autoHealPago(cita: Cita): Cita {
-        if (cita.estado != EstadoCita.PENDIENTE_PAGO) return cita
-        val referencia = cita.id?.toString() ?: return cita
-        val estadoPago = pagoService.consultarEstadoPago(referencia)
-
-        if (estadoPago.estado != EstadoPagoMP.APROBADO) return cita
-
-        cita.estado = EstadoCita.CONFIRMADA
-        cita.mpPaymentId = estadoPago.paymentId
-        val saved = citaRepository.save(cita)
-        logger.info("Auto-healing: Cita {} confirmada al consultar estado", cita.id)
-        eventPublisher.publishEvent(ReservaConfirmadaEvent(saved.id!!))
-        return saved
-    }
-
-    private fun buildItemsPago(
-        tempList: List<TempDetalle>,
-        pagoTotal: Boolean,
-        montoAbonoFinal: Int
-    ): List<PagoItem> {
-        val itemsPago = ArrayList<PagoItem>()
-
-        if (pagoTotal) {
-            tempList.forEach { temp ->
-                itemsPago.add(
-                    PagoItem(
-                        titulo = temp.servicio.nombre,
-                        precioUnitario = temp.precio
-                    )
-                )
-            }
-        } else {
-            val nombresServicios = tempList.joinToString(", ") { it.servicio.nombre }
-            itemsPago.add(
-                PagoItem(
-                    titulo = "Reserva: $nombresServicios",
-                    precioUnitario = montoAbonoFinal
-                )
-            )
-        }
-
-        return itemsPago
+        return citas.map { it.toDetalladaResponse() }
     }
 }

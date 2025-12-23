@@ -2,8 +2,8 @@ package cl.clinipets.backend.agendamiento.application
 
 import cl.clinipets.agendamiento.api.DetalleReservaRequest
 import cl.clinipets.agendamiento.application.ReservaService
+import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
-import cl.clinipets.pagos.application.PagoService
 import cl.clinipets.servicios.domain.ReglaPrecio
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.servicios.domain.ServicioMedicoRepository
@@ -19,14 +19,9 @@ import cl.clinipets.identity.domain.UserRole
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
-import org.mockito.kotlin.doReturn
-import org.mockito.kotlin.mock
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
-import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.mock.mockito.MockBean
-import org.springframework.context.annotation.Bean
-import org.springframework.context.annotation.Primary
 import org.springframework.test.context.TestPropertySource
 import java.math.BigDecimal
 import java.time.Instant
@@ -40,8 +35,7 @@ import java.time.ZoneId
         "jwt.secret=Y29udGFzZWNvbXNlY3JldG9iZGVDbGluSXBldHMxMjM0NTY3OA==",
         "jwt.refresh-secret=cmVmcmVzaFNlY3JldG9iZGVDbGluSXBldHMxMjM0NTY3OA==",
         "jwt.issuer=TestIssuer",
-        "google.client-id=test-google",
-        "mercadopago.access-token=dummy"
+        "google.client-id=test-google"
     ]
 )
 class ReservaServiceTest(
@@ -52,9 +46,6 @@ class ReservaServiceTest(
 ) {
     @MockBean
     private lateinit var storageService: StorageService
-
-    @Autowired
-    private lateinit var pagoMock: PagoService
 
     private lateinit var tutorPayload: JwtPayload
     private lateinit var servicio: ServicioMedico
@@ -91,8 +82,8 @@ class ReservaServiceTest(
             )
         )
         val regla = ReglaPrecio(
-            pesoMin = BigDecimal("0.0"),
-            pesoMax = BigDecimal("10.0"),
+            pesoMin = 0.0,
+            pesoMax = 10.0,
             precio = 30000,
             servicio = servicio
         )
@@ -105,7 +96,7 @@ class ReservaServiceTest(
                 especie = Especie.PERRO,
                 raza = "Mestizo",
                 sexo = Sexo.MACHO,
-                pesoActual = BigDecimal("8.5"),
+                pesoActual = 8.5,
                 // Usamos LocalDate para fecha de nacimiento
                 fechaNacimiento = LocalDate.of(2022, 5, 10),
                 tutor = tutor
@@ -114,7 +105,7 @@ class ReservaServiceTest(
     }
 
     @Test
-    fun `crear reserva genera payment url y cita pendiente`() {
+    fun `crear reserva genera cita confirmada`() {
         // Buscamos siguiente sabado
         val fechaSabado = siguienteSabadoAMas(LocalDate.now())
         // Convertimos a Instant a las 11:00 (HorarioClinica abre Sabado a las 10:00, cierra 19:00. 11:00 es válido)
@@ -131,11 +122,11 @@ class ReservaServiceTest(
             origen = OrigenCita.APP,
             tutor = tutorPayload
         )
-        assertEquals("https://pago.test", result.paymentUrl)
         
         // Cita properties checks
         assertEquals(tutorPayload.userId, result.cita.tutorId)
         assertEquals(30000, result.cita.precioFinal)
+        assertEquals(EstadoCita.CONFIRMADA, result.cita.estado)
         
         // Detalles checks
         assertEquals(1, result.cita.detalles.size)
@@ -149,14 +140,5 @@ class ReservaServiceTest(
             fecha = fecha.plusDays(1)
         }
         return fecha
-    }
-
-    @TestConfiguration
-    class PagoMockConfig {
-        @Bean
-        @Primary
-        fun pagoMock(): PagoService = mock {
-            on { crearPreferencia(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doReturn "https://pago.test"
-        }
     }
 }

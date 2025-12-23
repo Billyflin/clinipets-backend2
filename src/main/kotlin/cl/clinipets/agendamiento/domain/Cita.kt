@@ -49,15 +49,6 @@ data class Cita(
     @Column(length = 255)
     val direccion: String? = null,
 
-    @Column(nullable = false)
-    val montoAbono: Int = 0,
-
-    @Column(length = 1024)
-    var paymentUrl: String? = null,
-
-    @Column(unique = true)
-    var mpPaymentId: Long? = null,
-
     @Column(length = 50)
     var tokenCompensacion: String? = null,
 

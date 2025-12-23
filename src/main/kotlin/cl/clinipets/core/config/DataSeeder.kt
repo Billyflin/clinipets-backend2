@@ -185,44 +185,44 @@ class DataSeeder(
                 listOf(
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("0.0"),
-                        pesoMax = BigDecimal("10.0"),
+                        pesoMin = 0.0,
+                        pesoMax = 10.0,
                         precio = 30000
                     ),
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("10.1"),
-                        pesoMax = BigDecimal("15.0"),
+                        pesoMin = 10.1,
+                        pesoMax = 15.0,
                         precio = 34000
                     ),
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("15.1"),
-                        pesoMax = BigDecimal("20.0"),
+                        pesoMin = 15.1,
+                        pesoMax = 20.0,
                         precio = 38000
                     ),
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("20.1"),
-                        pesoMax = BigDecimal("25.0"),
+                        pesoMin = 20.1,
+                        pesoMax = 25.0,
                         precio = 42000
                     ),
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("25.1"),
-                        pesoMax = BigDecimal("30.0"),
+                        pesoMin = 25.1,
+                        pesoMax = 30.0,
                         precio = 46000
                     ),
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("30.1"),
-                        pesoMax = BigDecimal("35.0"),
+                        pesoMin = 30.1,
+                        pesoMax = 35.0,
                         precio = 50000
                     ),
                     ReglaPrecio(
                         servicio = servicio,
-                        pesoMin = BigDecimal("35.1"),
-                        pesoMax = BigDecimal("40.0"),
+                        pesoMin = 35.1,
+                        pesoMax = 40.0,
                         precio = 54000
                     )
                 )
@@ -310,8 +310,8 @@ class DataSeeder(
             if (requierePeso) {
                 servicio.reglas.add(
                     ReglaPrecio(
-                        pesoMin = BigDecimal.ZERO,
-                        pesoMax = BigDecimal("100.0"),
+                        pesoMin = 0.0,
+                        pesoMax = 100.0,
                         precio = precioBase,
                         servicio = servicio
                     )
@@ -345,7 +345,7 @@ class DataSeeder(
                 especie = Especie.PERRO,
                 raza = "Mestizo",
                 sexo = Sexo.MACHO,
-                pesoActual = BigDecimal("10.0"),
+                pesoActual = 10.0,
                 fechaNacimiento = LocalDate.now().minusYears(2),
                 tutor = user,
                 chipIdentificador = "TEST-CHIP-001"

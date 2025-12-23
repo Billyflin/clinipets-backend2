@@ -4,6 +4,7 @@ import cl.clinipets.veterinaria.domain.Especie
 import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.Sexo
 import cl.clinipets.veterinaria.domain.Temperamento
+import io.swagger.v3.oas.annotations.media.Schema
 import jakarta.validation.constraints.NotBlank
 import jakarta.validation.constraints.NotNull
 import java.math.BigDecimal
@@ -12,25 +13,42 @@ import java.util.UUID
 
 data class MascotaCreateRequest(
     @field:NotBlank(message = "El nombre es obligatorio")
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val nombre: String,
+
     @field:NotNull(message = "La especie es obligatoria")
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val especie: Especie,
+
     @field:NotBlank(message = "La raza es obligatoria (o 'Mestizo')")
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val raza: String,
+
     @field:NotNull(message = "El sexo es obligatorio")
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val sexo: Sexo,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val esterilizado: Boolean = false,
+
     val chipIdentificador: String? = null,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val temperamento: Temperamento = Temperamento.DOCIL,
-    val pesoActual: BigDecimal? = null,
+
+    val pesoActual: Double? = null,
     val fechaNacimiento: LocalDate? = null
 )
 
 data class MascotaUpdateRequest(
     @field:NotBlank(message = "El nombre es obligatorio")
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val nombre: String,
+
     @field:NotNull(message = "El peso es obligatorio")
-    val pesoActual: BigDecimal,
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+    val pesoActual: Double,
+    
     val raza: String?,
     val sexo: Sexo?,
     val esterilizado: Boolean?,
@@ -39,25 +57,47 @@ data class MascotaUpdateRequest(
 )
 
 data class MascotaClinicalUpdateRequest(
-    val pesoActual: BigDecimal?,
+    val pesoActual: Double?,
     val esterilizado: Boolean?,
     val testRetroviralNegativo: Boolean?,
     val observaciones: String?
 )
 
 data class MascotaResponse(
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val id: UUID,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val nombre: String,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val especie: Especie,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val raza: String,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val sexo: Sexo,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val esterilizado: Boolean,
+
     val chipIdentificador: String?,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val temperamento: Temperamento,
-    val pesoActual: BigDecimal,
-    val fechaNacimiento: LocalDate,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, example = "5.5")
+    val pesoActual: Double,
+
+    val fechaNacimiento: LocalDate?,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val tutorId: UUID,
+
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val testRetroviralNegativo: Boolean,
+
     val fechaUltimoTestRetroviral: LocalDate?,
     val observacionesClinicas: String?
 )
