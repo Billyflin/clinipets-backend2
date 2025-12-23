@@ -1,36 +1,38 @@
 package cl.clinipets.servicios.domain
 
+import cl.clinipets.core.domain.AuditableEntity
 import jakarta.persistence.*
-import java.math.BigDecimal
 import java.util.UUID
 
 @Entity
-@Table(name = "reglas_precio")
-class ReglaPrecio(
+@Table(name = "insumos")
+class Insumo(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     val id: UUID? = null,
 
-    @Column(nullable = false)
-    val pesoMin: Double,
+    @Version
+    var version: Long? = null,
 
     @Column(nullable = false)
-    val pesoMax: Double,
+    var nombre: String,
 
     @Column(nullable = false)
-    val precio: Int,
+    var stockActual: Double,
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "servicio_id", nullable = false)
-    var servicio: ServicioMedico
-) {
+    @Column(nullable = false)
+    var stockMinimo: Int,
+
+    @Column(nullable = false)
+    var unidadMedida: String
+) : AuditableEntity() {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
-        if (other !is ReglaPrecio) return false
+        if (other !is Insumo) return false
         return id != null && id == other.id
     }
 
     override fun hashCode(): Int = id?.hashCode() ?: 0
 
-    override fun toString(): String = "ReglaPrecio(id=$id, pesoMin=$pesoMin, pesoMax=$pesoMax, precio=$precio)"
+    override fun toString(): String = "Insumo(id=$id, nombre='$nombre')"
 }

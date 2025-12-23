@@ -22,19 +22,35 @@ data class DetalleReservaRequest(
     val mascotaId: UUID? // Optional for products
 )
 
+data class ReservaItemRequest(
+    @field:NotNull
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+    val mascotaId: UUID,
+
+    @field:NotNull
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+    val servicioId: UUID,
+
+    @field:Schema(description = "Cantidad del servicio (opcional, por defecto 1)")
+    val cantidad: Int = 1
+)
+
 data class ReservaCreateRequest(
     @field:NotEmpty
     @field:Valid
     @field:Schema(
         requiredMode = Schema.RequiredMode.REQUIRED,
-        description = "Lista de servicios o productos a reservar"
+        description = "Lista de servicios para las mascotas"
     )
-    val detalles: List<DetalleReservaRequest>,
+    val detalles: List<ReservaItemRequest>,
 
     @field:NotNull
     @field:Future
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Fecha y hora de inicio de la cita")
     val fechaHoraInicio: Instant,
+
+    @field:Schema(description = "Motivo de la consulta")
+    val motivoConsulta: String? = null,
 
     @field:NotNull
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Origen de la cita (APP, WEB, PRESENCIAL)")
@@ -99,6 +115,7 @@ data class CitaResponse(
     val origen: OrigenCita,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val tipoAtencion: TipoAtencion,
+    val motivoConsulta: String?,
     val direccion: String?
 )
 
@@ -123,6 +140,7 @@ data class CitaDetalladaResponse(
     val origen: OrigenCita,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val tipoAtencion: TipoAtencion,
+    val motivoConsulta: String?,
     val direccion: String?
 )
 
@@ -137,6 +155,7 @@ fun Cita.toResponse() = CitaResponse(
     tutorId = tutorId,
     origen = origen,
     tipoAtencion = tipoAtencion,
+    motivoConsulta = motivoConsulta,
     direccion = direccion
 )
 
@@ -154,6 +173,7 @@ fun Cita.toDetalladaResponse() = CitaDetalladaResponse(
     tutorId = tutorId,
     origen = origen,
     tipoAtencion = tipoAtencion,
+    motivoConsulta = motivoConsulta,
     direccion = direccion
 )
 

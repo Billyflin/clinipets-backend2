@@ -1,17 +1,7 @@
 package cl.clinipets.agendamiento.application
 
-import cl.clinipets.agendamiento.api.CitaDetalladaResponse
-import cl.clinipets.agendamiento.api.DetalleReservaRequest
-import cl.clinipets.agendamiento.api.ResumenDiarioResponse
-import cl.clinipets.agendamiento.api.toDetalladaResponse
-import cl.clinipets.agendamiento.domain.Cita
-import cl.clinipets.agendamiento.domain.ClinicalValidator
-import cl.clinipets.agendamiento.domain.CitaRepository
-import cl.clinipets.agendamiento.domain.DetalleCita
-import cl.clinipets.agendamiento.domain.EstadoCita
-import cl.clinipets.agendamiento.domain.OrigenCita
-import cl.clinipets.agendamiento.domain.TipoAtencion
-import cl.clinipets.agendamiento.domain.MetodoPago
+import cl.clinipets.agendamiento.api.*
+import cl.clinipets.agendamiento.domain.*
 import cl.clinipets.agendamiento.domain.events.ReservaCanceladaEvent
 import cl.clinipets.agendamiento.domain.events.ReservaConfirmadaEvent
 import cl.clinipets.agendamiento.domain.events.ReservaCreadaEvent
@@ -45,6 +35,7 @@ class ReservaService(
     private val inventarioService: InventarioService,
     private val pricingCalculator: PricingCalculator,
     private val clinicalValidator: ClinicalValidator,
+    private val signosVitalesRepository: cl.clinipets.veterinaria.domain.SignosVitalesRepository,
     private val clinicZoneId: ZoneId,
     private val eventPublisher: ApplicationEventPublisher
 ) {
@@ -102,178 +93,107 @@ class ReservaService(
 
     @Transactional
     fun crearReserva(
-        detallesRequest: List<DetalleReservaRequest>,
+        detalles: List<ReservaItemRequest>,
         fechaHoraInicio: Instant,
         origen: OrigenCita,
         tutor: JwtPayload,
         tipoAtencion: TipoAtencion = TipoAtencion.CLINICA,
         direccion: String? = null,
-        pagoTotal: Boolean = false
+        pagoTotal: Boolean = false,
+        motivoConsulta: String? = null
     ): ReservaResult {
-        logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Items: ${detallesRequest.size}, Fecha: $fechaHoraInicio, PagoTotal: $pagoTotal")
+        logger.info(">>> [CREAR_RESERVA] Inicio. Tutor: ${tutor.email}, Detalles: ${detalles.size}, Fecha: $fechaHoraInicio")
 
-        if (detallesRequest.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio o producto")
+        if (detalles.isEmpty()) throw BadRequestException("Debe incluir al menos un servicio")
         if (tipoAtencion == TipoAtencion.DOMICILIO && direccion.isNullOrBlank()) {
              throw BadRequestException("Debe especificar una dirección para atención a domicilio")
         }
 
-        // --- BATCH FETCHING ---
-        val serviciosIds = detallesRequest.map { it.servicioId }.toSet()
-        val mascotasIds = detallesRequest.mapNotNull { it.mascotaId }.toSet()
+        val serviciosIds = detalles.map { it.servicioId }.toSet()
+        val mascotasIds = detalles.map { it.mascotaId }.toSet()
 
         val serviciosMap = servicioMedicoRepository.findAllById(serviciosIds).associateBy { it.id!! }
-        val mascotasMap = if (mascotasIds.isNotEmpty()) {
-            mascotaRepository.findAllById(mascotasIds).associateBy { it.id!! }
-        } else {
-            emptyMap()
+        val mascotasMap = mascotaRepository.findAllById(mascotasIds).associateBy { it.id!! }
+
+        if (serviciosMap.size < serviciosIds.size) {
+            val missing = serviciosIds - serviciosMap.keys
+            throw NotFoundException("Servicios no encontrados: $missing")
+        }
+        if (mascotasMap.size < mascotasIds.size) {
+            val missing = mascotasIds - mascotasMap.keys
+            throw NotFoundException("Mascotas no encontradas: $missing")
         }
 
-        // Verify all services exist
-        val missingServices = serviciosIds - serviciosMap.keys
-        if (missingServices.isNotEmpty()) {
-            throw NotFoundException("Servicios no encontrados: $missingServices")
-        }
-
-        // --- PROMOCIONES ---
         val fechaCita = fechaHoraInicio.atZone(clinicZoneId).toLocalDate()
-        // -------------------
-
         var totalPrecio = 0
         var duracionTotalMinutos = 0L
-
         val tempList = mutableListOf<TempDetalle>()
 
-        logger.debug(">>> [CREAR_RESERVA] Procesando items del carrito...")
+        for (item in detalles) {
+            val mascota = mascotasMap[item.mascotaId]!!
+            if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
 
-        for (req in detallesRequest) {
-            val servicio = serviciosMap[req.servicioId]!! // Safe due to check above
-
+            val servicio = serviciosMap[item.servicioId]!!
             if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
 
-            // Delegate inventory management (MOVIDO: Se hace después de guardar para tener el ID)
-            // inventarioService.consumirStock(servicio.id!!)
-
-            var mascota: cl.clinipets.veterinaria.domain.Mascota? = null
-
-            if (servicio.categoria == CategoriaServicio.PRODUCTO) {
-                if (req.mascotaId != null) {
-                    mascota = mascotasMap[req.mascotaId]
-                        ?: throw NotFoundException("Mascota no encontrada: ${req.mascotaId}")
-                    
-                    if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
-                }
-                duracionTotalMinutos += servicio.duracionMinutos
-            } else {
-                if (req.mascotaId == null) throw BadRequestException("El servicio ${servicio.nombre} requiere especificar una mascota")
-
-                mascota = mascotasMap[req.mascotaId]
-                    ?: throw NotFoundException("Mascota no encontrada: ${req.mascotaId}")
-
-                if (mascota.tutor.id != tutor.userId) throw UnauthorizedException("La mascota ${mascota.nombre} no te pertenece")
-
-                clinicalValidator.validarRequisitosClinicos(servicio, mascota, serviciosIds)
-                duracionTotalMinutos += servicio.duracionMinutos
+            // Validar stock de insumos antes de proceder
+            val stockDisponible = servicio.insumos.filter { it.critico }.all { si ->
+                si.insumo.stockActual >= (si.cantidadRequerida * item.cantidad)
             }
+            if (!stockDisponible) throw BadRequestException("No hay stock suficiente para el servicio: ${servicio.nombre}")
 
+            clinicalValidator.validarRequisitosClinicos(servicio, mascota, serviciosIds)
+            
             val precioCalculado = pricingCalculator.calcularPrecioFinal(servicio, mascota, fechaCita)
 
-            logger.debug("   -> Item: ${servicio.nombre} | Duración: ${servicio.duracionMinutos} min | Precio: ${precioCalculado.precioFinal}")
+            val precioItem = precioCalculado.precioFinal * item.cantidad
+            totalPrecio += precioItem
+            duracionTotalMinutos += (servicio.duracionMinutos * item.cantidad)
 
-            totalPrecio += precioCalculado.precioFinal
-            tempList.add(TempDetalle(servicio, mascota, precioCalculado.precioFinal))
+            repeat(item.cantidad) {
+                tempList.add(TempDetalle(servicio, mascota, precioCalculado.precioFinal))
+            }
         }
 
-        logger.info(">>> [CREAR_RESERVA] Carrito procesado. Total: $totalPrecio.")
-
-        // Validate Availability for the total duration
+        // Validación de Disponibilidad
+        val fechaNormalizada = fechaHoraInicio.truncatedTo(ChronoUnit.MINUTES)
         if (duracionTotalMinutos > 0) {
-            val fechaNormalizada = fechaHoraInicio.truncatedTo(ChronoUnit.MINUTES)
-
-            // Log crucial para debugging de zona horaria
-            val fechaLocal = fechaNormalizada.atZone(clinicZoneId).toLocalDate()
-            logger.info(">>> [VALIDACION_HORARIO] FechaNormalizada(Instant): $fechaNormalizada -> Convertida a Zona Clínica ($clinicZoneId): $fechaLocal")
-
-            val slotsDisponibles = disponibilidadService.obtenerSlots(fechaLocal, duracionTotalMinutos.toInt())
-
+            val slotsDisponibles = disponibilidadService.obtenerSlots(fechaCita, duracionTotalMinutos.toInt())
             val slotValido = slotsDisponibles.any { it.compareTo(fechaNormalizada) == 0 }
 
             if (!slotValido) {
-                logger.warn(">>> [ERROR_DISPONIBILIDAD] El slot solicitado $fechaNormalizada NO se encontró en los slots disponibles")
-                throw BadRequestException("El horario seleccionado no está disponible para la duración total ($duracionTotalMinutos min)")
+                throw BadRequestException("No hay disponibilidad para la duración total ($duracionTotalMinutos min) en el horario seleccionado")
             }
-
-            logger.info(">>> [VALIDACION_HORARIO] Horario disponible confirmado.")
-
-            // Use normalized time for the appointment start/end
-            val fechaHoraFin = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
-
-            val cita = Cita(
-                fechaHoraInicio = fechaNormalizada,
-                fechaHoraFin = fechaHoraFin,
-                estado = EstadoCita.CONFIRMADA,
-                precioFinal = totalPrecio,
-                tutorId = tutor.userId,
-                origen = origen,
-                tipoAtencion = tipoAtencion,
-                direccion = direccion
-            )
-
-            // Now create DetalleCita objects linked to the Cita
-            tempList.forEach { temp ->
-                cita.detalles.add(
-                    DetalleCita(
-                        cita = cita,
-                        servicio = temp.servicio,
-                        mascota = temp.mascota,
-                        precioUnitario = temp.precio
-                    )
-                )
-            }
-
-            val guardada = citaRepository.save(cita)
-            logger.info(">>> [CREAR_RESERVA] Cita guardada en BD con ID: ${guardada.id}")
-
-            // CONSUMIR STOCK AHORA QUE TENEMOS ID
-            guardada.detalles.forEach { detalle ->
-                inventarioService.consumirStock(detalle.servicio.id!!, 1, "creación de Cita ${guardada.id}")
-            }
-
-            eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
-            return ReservaResult(guardada)
-        } else {
-            // Caso de productos sin duración (Venta directa o retiro)
-            logger.info(">>> [CREAR_RESERVA] Duración 0 detectada (Solo productos). Saltando validación de agenda estricta.")
-
-            val cita = Cita(
-                fechaHoraInicio = fechaHoraInicio,
-                fechaHoraFin = fechaHoraInicio,
-                estado = EstadoCita.CONFIRMADA,
-                precioFinal = totalPrecio,
-                tutorId = tutor.userId,
-                origen = origen,
-                tipoAtencion = tipoAtencion,
-                direccion = direccion
-            )
-            tempList.forEach { temp ->
-                cita.detalles.add(
-                    DetalleCita(
-                        cita = cita,
-                        servicio = temp.servicio,
-                        mascota = temp.mascota,
-                        precioUnitario = temp.precio
-                    )
-                )
-            }
-            val guardada = citaRepository.save(cita)
-
-            // CONSUMIR STOCK AHORA QUE TENEMOS ID
-            guardada.detalles.forEach { detalle ->
-                inventarioService.consumirStock(detalle.servicio.id!!, 1, "creación de Cita ${guardada.id}")
-            }
-
-            eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
-            return ReservaResult(guardada)
         }
+
+        val fechaHoraFin = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
+        val cita = Cita(
+            fechaHoraInicio = fechaNormalizada,
+            fechaHoraFin = fechaHoraFin,
+            estado = EstadoCita.CONFIRMADA,
+            precioFinal = totalPrecio,
+            tutorId = tutor.userId,
+            origen = origen,
+            tipoAtencion = tipoAtencion,
+            motivoConsulta = motivoConsulta,
+            direccion = direccion
+        )
+
+        tempList.forEach { temp ->
+            cita.detalles.add(
+                DetalleCita(
+                    cita = cita,
+                    servicio = temp.servicio,
+                    mascota = temp.mascota,
+                    precioUnitario = temp.precio
+                )
+            )
+        }
+
+        val guardada = citaRepository.save(cita)
+
+        eventPublisher.publishEvent(ReservaCreadaEvent(guardada.id!!))
+        return ReservaResult(guardada)
     }
 
     @Transactional
@@ -320,11 +240,8 @@ class ReservaService(
 
     private fun reponerStock(cita: Cita) {
         cita.detalles.forEach { detalle ->
-            val servicio = detalle.servicio
-            if (servicio.categoria == CategoriaServicio.PRODUCTO) {
-                logger.info("[STOCK] Reponiendo stock para producto: {}", servicio.nombre)
-                inventarioService.devolverStock(servicio)
-            }
+            logger.info("[STOCK] Reponiendo stock/insumos para: {}", detalle.servicio.nombre)
+            inventarioService.devolverStock(detalle.servicio)
         }
     }
 
@@ -371,7 +288,8 @@ class ReservaService(
     }
 
     @Transactional
-    fun finalizarCita(id: UUID, metodoPago: MetodoPago?, staff: JwtPayload): Cita {
+    fun finalizarCita(id: UUID, request: FinalizarCitaRequest?, staff: JwtPayload): Cita {
+        val metodoPago = request?.metodoPago
         logger.info("[FINALIZAR_CITA] Request. CitaID: {}, Staff: {}, Metodo: {}", id, staff.email, metodoPago)
         
         // Validate permissions
@@ -387,13 +305,34 @@ class ReservaService(
             throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
         }
 
-        // Finalize immediately
+        // 1. Descontar stock e insumos al finalizar la atención
+        cita.detalles.forEach { detalle ->
+            logger.info("[STOCK] Consumiendo stock para servicio: {} en cita {}", detalle.servicio.nombre, id)
+            inventarioService.consumirStock(detalle.servicio.id!!, 1, "Cita $id")
+
+            // Registrar Signos Vitales si vienen en el request para esta mascota
+            val mascotaVal = detalle.mascota
+            if (mascotaVal != null) {
+                request?.signosVitales?.get(mascotaVal.id)?.let { svReq ->
+                    val sv = cl.clinipets.veterinaria.domain.SignosVitales(
+                        mascota = mascotaVal,
+                        peso = svReq.peso,
+                        temperatura = svReq.temperatura,
+                        frecuenciaCardiaca = svReq.frecuenciaCardiaca
+                    )
+                    signosVitalesRepository.save(sv)
+                    logger.info("[CLINICO] Signos vitales registrados para mascota {}", mascotaVal.id)
+                }
+            }
+        }
+
+        // 2. Finalizar cita
         cita.metodoPagoSaldo = metodoPago
         cita.staffFinalizadorId = staff.userId
         cita.estado = EstadoCita.FINALIZADA
         
         val saved = citaRepository.save(cita)
-        logger.info("AUDIT: Cita $id movida a FINALIZADA por staff ${staff.email}")
+        logger.info("AUDIT: Cita $id finalizada y stock descontado por staff ${staff.email}")
         return saved
     }
 

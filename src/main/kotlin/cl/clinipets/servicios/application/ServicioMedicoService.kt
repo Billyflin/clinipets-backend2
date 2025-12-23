@@ -16,8 +16,27 @@ class ServicioMedicoService(
     @Transactional(readOnly = true)
     fun listarActivos(): List<ServicioMedicoDto> {
         logger.debug("[SERVICIO_MEDICO] Buscando servicios activos")
-        val servicios = servicioMedicoRepository.findByActivoTrue().map { it.toDto() }
-        logger.debug("[SERVICIO_MEDICO] Encontrados {} servicios activos", servicios.size)
-        return servicios
+        val servicios = servicioMedicoRepository.findByActivoTrue()
+
+        val filtrados = servicios.filter { servicio ->
+            // 1. Verificar stock directo (si es un producto con stock definido)
+            if (servicio.stock != null && servicio.stock!! <= 0) {
+                return@filter false
+            }
+
+            // 2. Verificar stock de insumos críticos
+            if (servicio.insumos.isEmpty()) return@filter true
+
+            servicio.insumos.filter { it.critico }.all { si ->
+                si.insumo.stockActual >= si.cantidadRequerida
+            }
+        }.map { it.toDto() }
+
+        logger.debug(
+            "[SERVICIO_MEDICO] Encontrados {} servicios activos ({} tras filtro de stock)",
+            servicios.size,
+            filtrados.size
+        )
+        return filtrados
     }
 }

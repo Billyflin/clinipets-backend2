@@ -21,16 +21,20 @@ class ReservaDtosTest {
     fun `ReservaCreateRequest should be correctly instantiated`() {
         val servicioId = UUID.randomUUID()
         val mascotaId = UUID.randomUUID()
-        val detalle = DetalleReservaRequest(servicioId, mascotaId)
+        val itemReserva = ReservaItemRequest(mascotaId, servicioId)
         
         val fechaHoraInicio = Instant.now()
         val origen = OrigenCita.WEB
 
-        val request = ReservaCreateRequest(listOf(detalle), fechaHoraInicio, origen)
+        val request = ReservaCreateRequest(
+            detalles = listOf(itemReserva),
+            fechaHoraInicio = fechaHoraInicio,
+            origen = origen
+        )
 
         assertEquals(1, request.detalles.size)
-        assertEquals(servicioId, request.detalles[0].servicioId)
         assertEquals(mascotaId, request.detalles[0].mascotaId)
+        assertEquals(servicioId, request.detalles[0].servicioId)
         assertEquals(fechaHoraInicio, request.fechaHoraInicio)
         assertEquals(origen, request.origen)
     }
@@ -55,17 +59,18 @@ class ReservaDtosTest {
         )
 
         val response = CitaResponse(
-            id,
-            fechaHoraInicio,
-            fechaHoraFin,
-            estado,
-            precioFinal,
-            precioFinal, // saldoPendiente
-            listOf(detalleResponse),
-            tutorId,
-            origen,
-            cl.clinipets.agendamiento.domain.TipoAtencion.CLINICA, // tipoAtencion
-            null // direccion
+            id = id,
+            fechaHoraInicio = fechaHoraInicio,
+            fechaHoraFin = fechaHoraFin,
+            estado = estado,
+            precioFinal = precioFinal,
+            saldoPendiente = precioFinal,
+            detalles = listOf(detalleResponse),
+            tutorId = tutorId,
+            origen = origen,
+            tipoAtencion = cl.clinipets.agendamiento.domain.TipoAtencion.CLINICA,
+            motivoConsulta = null,
+            direccion = null
         )
 
         assertEquals(id, response.id)

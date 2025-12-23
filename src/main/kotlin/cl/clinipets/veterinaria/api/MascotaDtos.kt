@@ -102,6 +102,47 @@ data class MascotaResponse(
     val observacionesClinicas: String?
 )
 
+data class ItemPreventivoResponse(
+    val tipo: cl.clinipets.veterinaria.domain.TipoPreventivo,
+    val producto: String,
+    val fechaAplicacion: java.time.Instant,
+    val fechaRefuerzo: java.time.Instant?,
+    val lote: String?,
+    val observaciones: String?
+)
+
+data class PasaporteSaludResponse(
+    val mascotaId: UUID,
+    val nombreMascota: String,
+    val especie: Especie,
+    val preventivos: List<ItemPreventivoResponse>
+)
+
+data class SignosVitalesDto(
+    val id: UUID,
+    val peso: Double,
+    val temperatura: Double,
+    val frecuenciaCardiaca: String,
+    val fecha: java.time.Instant
+)
+
+fun cl.clinipets.veterinaria.domain.SignosVitales.toDto() = SignosVitalesDto(
+    id = id!!,
+    peso = peso,
+    temperatura = temperatura,
+    frecuenciaCardiaca = frecuenciaCardiaca,
+    fecha = fecha
+)
+
+fun cl.clinipets.veterinaria.domain.PlanPreventivo.toItemResponse() = ItemPreventivoResponse(
+    tipo = tipo,
+    producto = producto,
+    fechaAplicacion = fechaAplicacion,
+    fechaRefuerzo = fechaRefuerzo,
+    lote = lote,
+    observaciones = observaciones
+)
+
 fun Mascota.toResponse() = MascotaResponse(
     id = id!!,
     nombre = nombre,

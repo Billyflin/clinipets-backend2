@@ -16,7 +16,6 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
-import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Optional
 import java.util.UUID
@@ -28,8 +27,8 @@ class ClinicalValidatorTest {
 
     @Test
     fun `lanza error si mascota esterilizada y servicio lo prohíbe`() {
-        val servicio = baseServicio().copy(bloqueadoSiEsterilizado = true)
-        val mascota = baseMascota().copy(esterilizado = true)
+        val servicio = baseServicio().apply { bloqueadoSiEsterilizado = true }
+        val mascota = baseMascota().apply { esterilizado = true }
 
         assertThrows(BadRequestException::class.java) {
             validator.validarRequisitosClinicos(servicio, mascota, emptySet())
@@ -39,10 +38,12 @@ class ClinicalValidatorTest {
     @Test
     fun `lanza error si falta test retroviral para vacuna de leucemia`() {
         val requeridoId = UUID.randomUUID()
-        val servicio = baseServicio().copy(serviciosRequeridosIds = mutableSetOf(requeridoId))
-        val mascota = baseMascota().copy(testRetroviralNegativo = false)
+        val servicio = baseServicio().apply { serviciosRequeridosIds = mutableSetOf(requeridoId) }
+        val mascota = baseMascota().apply { testRetroviralNegativo = false }
 
-        val servicioRequerido = baseServicio().copy(id = requeridoId, nombre = "Vacuna Leucemia Felina")
+        val servicioRequerido = baseServicio(requeridoId).apply {
+            nombre = "Vacuna Leucemia Felina"
+        }
         whenever(servicioRepo.findById(any())).thenReturn(Optional.of(servicioRequerido))
 
         assertThrows(BadRequestException::class.java) {
@@ -50,8 +51,8 @@ class ClinicalValidatorTest {
         }
     }
 
-    private fun baseServicio(): ServicioMedico = ServicioMedico(
-        id = UUID.randomUUID(),
+    private fun baseServicio(id: UUID = UUID.randomUUID()): ServicioMedico = ServicioMedico(
+        id = id,
         nombre = "Servicio X",
         precioBase = 1000,
         precioAbono = 200,
@@ -62,8 +63,8 @@ class ClinicalValidatorTest {
         especiesPermitidas = mutableSetOf(Especie.PERRO)
     )
 
-    private fun baseMascota(): Mascota = Mascota(
-        id = UUID.randomUUID(),
+    private fun baseMascota(id: UUID = UUID.randomUUID()): Mascota = Mascota(
+        id = id,
         nombre = "Firulais",
         especie = Especie.PERRO,
         pesoActual = 10.0,

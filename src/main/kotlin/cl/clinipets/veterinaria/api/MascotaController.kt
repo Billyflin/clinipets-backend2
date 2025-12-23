@@ -1,5 +1,10 @@
 package cl.clinipets.veterinaria.api
 
+import cl.clinipets.veterinaria.api.MascotaClinicalUpdateRequest
+import cl.clinipets.veterinaria.api.MascotaCreateRequest
+import cl.clinipets.veterinaria.api.MascotaResponse
+import cl.clinipets.veterinaria.api.MascotaUpdateRequest
+import cl.clinipets.veterinaria.api.PasaporteSaludResponse
 import cl.clinipets.veterinaria.application.MascotaService
 import cl.clinipets.core.security.JwtPayload
 import io.swagger.v3.oas.annotations.Operation
@@ -9,16 +14,8 @@ import jakarta.validation.Valid
 import org.springframework.http.ResponseEntity
 import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
-import org.springframework.web.bind.annotation.DeleteMapping
-import org.springframework.web.bind.annotation.GetMapping
-import org.springframework.web.bind.annotation.PatchMapping
-import org.springframework.web.bind.annotation.PathVariable
-import org.springframework.web.bind.annotation.PostMapping
-import org.springframework.web.bind.annotation.PutMapping
-import org.springframework.web.bind.annotation.RequestBody
-import org.springframework.web.bind.annotation.RequestMapping
+import org.springframework.web.bind.annotation.*
 import org.slf4j.LoggerFactory
-import org.springframework.web.bind.annotation.RestController
 import java.util.UUID
 
 @RestController
@@ -27,6 +24,36 @@ class MascotaController(
     private val mascotaService: MascotaService
 ) {
     private val logger = LoggerFactory.getLogger(MascotaController::class.java)
+
+    @Operation(summary = "Consultar pasaporte de salud", operationId = "pasaporteSalud")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Pasaporte obtenido"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
+    @GetMapping("/{id}/pasaporte-salud")
+    fun pasaporteSalud(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<PasaporteSaludResponse> {
+        logger.info("[PASAPORTE_SALUD] Consulta para mascota: {}", id)
+        val response = mascotaService.consultarPasaporteSalud(id, principal)
+        return ResponseEntity.ok(response)
+    }
+
+    @Operation(summary = "Consultar historial de signos vitales", operationId = "historialVitals")
+    @ApiResponses(
+        ApiResponse(responseCode = "200", description = "Historial obtenido"),
+        ApiResponse(responseCode = "404", description = "Mascota no encontrada")
+    )
+    @GetMapping("/{id}/historial-vitals")
+    fun historialVitals(
+        @PathVariable id: UUID,
+        @AuthenticationPrincipal principal: JwtPayload
+    ): ResponseEntity<List<cl.clinipets.veterinaria.api.SignosVitalesDto>> {
+        logger.info("[HISTORIAL_VITALS] Consulta para mascota: {}", id)
+        val response = mascotaService.consultarHistorialVitals(id, principal)
+        return ResponseEntity.ok(response)
+    }
 
     @Operation(summary = "Crear mascota", operationId = "crearMascota")
     @ApiResponses(

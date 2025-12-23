@@ -70,7 +70,7 @@ class FichaClinicaService(
         // Si hay una cita asociada, podemos moverla a EN_ATENCION o LISTO_PARA_BOX
         request.citaId?.let { cId ->
             citaRepository.findById(cId).ifPresent { cita ->
-                if (cita.estado == EstadoCita.CONFIRMADA || cita.estado == EstadoCita.EN_SALA) {
+                if (cita.estado == EstadoCita.CONFIRMADA || cita.estado == EstadoCita.LLEGADA) {
                     cita.estado = if (request.avaluoClinico.isNullOrBlank()) EstadoCita.LISTO_PARA_BOX else EstadoCita.EN_ATENCION
                     citaRepository.save(cita)
                 }

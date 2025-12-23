@@ -2,9 +2,11 @@ package cl.clinipets.agendamiento.domain
 
 enum class EstadoCita {
     CONFIRMADA,
-    EN_SALA,
+    CANCELADA,
+    LLEGADA,
     LISTO_PARA_BOX,
     EN_ATENCION,
     FINALIZADA,
-    CANCELADA
+    EN_SEDACION,
+    PABELLON_ESPERA
 }

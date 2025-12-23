@@ -16,8 +16,15 @@ import org.springframework.web.bind.annotation.*
 import java.time.LocalDate
 import java.util.UUID
 
+data class SignosVitalesRequest(
+    val peso: Double,
+    val temperatura: Double,
+    val frecuenciaCardiaca: String
+)
+
 data class FinalizarCitaRequest(
-    val metodoPago: MetodoPago? = null
+    val metodoPago: MetodoPago? = null,
+    val signosVitales: Map<UUID, SignosVitalesRequest>? = null
 )
 
 @RestController
@@ -54,13 +61,14 @@ class ReservaController(
     ): ResponseEntity<CitaResponse> {
         logger.info("[CREAR_RESERVA] Request recibida. Tutor: {}", principal.email)
         val result = reservaService.crearReserva(
-            detallesRequest = request.detalles,
+            detalles = request.detalles,
             fechaHoraInicio = request.fechaHoraInicio,
             origen = request.origen,
             tutor = principal,
             tipoAtencion = request.tipoAtencion,
             direccion = request.direccion,
-            pagoTotal = request.pagoTotal
+            pagoTotal = request.pagoTotal,
+            motivoConsulta = request.motivoConsulta
         )
         logger.info("[CREAR_RESERVA] Fin request - Exitoso. ID Cita: {}", result.cita.id)
         return ResponseEntity.ok(result.cita.toResponse())
@@ -156,9 +164,8 @@ class ReservaController(
         @RequestBody(required = false) request: FinalizarCitaRequest?,
         @AuthenticationPrincipal principal: JwtPayload
     ): ResponseEntity<CitaResponse> {
-        val metodoPago = request?.metodoPago
-        logger.info("[FINALIZAR_CITA] Request. ID: {}, User: {}, Metodo: {}", id, principal.email, metodoPago)
-        val cita = reservaService.finalizarCita(id, metodoPago, principal)
+        logger.info("[FINALIZAR_CITA] Request. ID: {}, User: {}", id, principal.email)
+        val cita = reservaService.finalizarCita(id, request, principal)
         logger.info("[FINALIZAR_CITA] Fin request - Exitoso")
         return ResponseEntity.ok(cita.toResponse())
     }

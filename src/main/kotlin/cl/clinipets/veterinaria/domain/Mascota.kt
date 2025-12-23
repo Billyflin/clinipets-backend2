@@ -48,6 +48,9 @@ data class Mascota(
     @JoinColumn(name = "tutor_id", nullable = false)
     var tutor: User,
 
+    @OneToMany(mappedBy = "mascota", cascade = [CascadeType.ALL], fetch = FetchType.LAZY)
+    val signosVitales: MutableList<SignosVitales> = mutableListOf(),
+
     @Column(nullable = false)
     var testRetroviralNegativo: Boolean = false,
 

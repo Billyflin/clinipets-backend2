@@ -14,7 +14,7 @@ enum class MetodoPago {
 
 @Entity
 @Table(name = "citas")
-data class Cita(
+class Cita(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     val id: UUID? = null,
@@ -32,7 +32,7 @@ data class Cita(
     @Column(nullable = false)
     var precioFinal: Int,
 
-    @OneToMany(mappedBy = "cita", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    @OneToMany(mappedBy = "cita", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     val detalles: MutableList<DetalleCita> = mutableListOf(),
 
     @Column(nullable = false)
@@ -46,6 +46,9 @@ data class Cita(
     @Column(nullable = false, length = 16)
     val tipoAtencion: TipoAtencion = TipoAtencion.CLINICA,
 
+    @Column(length = 500)
+    val motivoConsulta: String? = null,
+
     @Column(length = 255)
     val direccion: String? = null,
 
@@ -58,4 +61,14 @@ data class Cita(
 
     @Column
     var staffFinalizadorId: UUID? = null
-) : AuditableEntity()
+) : AuditableEntity() {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is Cita) return false
+        return id != null && id == other.id
+    }
+
+    override fun hashCode(): Int = id?.hashCode() ?: 0
+
+    override fun toString(): String = "Cita(id=$id, inicio=$fechaHoraInicio, estado=$estado)"
+}

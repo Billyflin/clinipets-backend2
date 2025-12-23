@@ -36,6 +36,15 @@ class RestExceptionHandler {
         return buildError(HttpStatus.BAD_REQUEST, ex, request)
     }
 
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException::class)
+    fun handleAccessDenied(
+        ex: org.springframework.security.access.AccessDeniedException,
+        request: HttpServletRequest
+    ): ResponseEntity<ApiError> {
+        logger.warn("AccessDenied: {} [{}]", ex.message, request.servletPath)
+        return buildError(HttpStatus.FORBIDDEN, ex, request)
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(ex: MethodArgumentNotValidException, request: HttpServletRequest): ResponseEntity<ApiError> {
         val fieldError = ex.bindingResult.fieldError

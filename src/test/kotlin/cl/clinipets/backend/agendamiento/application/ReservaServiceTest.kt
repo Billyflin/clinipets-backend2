@@ -78,7 +78,7 @@ class ReservaServiceTest(
                 requierePeso = true,
                 duracionMinutos = 60,
                 activo = true,
-                reglas = mutableListOf()
+                reglas = mutableSetOf()
             )
         )
         val regla = ReglaPrecio(
@@ -112,10 +112,10 @@ class ReservaServiceTest(
         val inicio = fechaSabado.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
         
         val result = reservaService.crearReserva(
-            detallesRequest = listOf(
-                DetalleReservaRequest(
-                    servicioId = servicio.id!!,
-                    mascotaId = mascota.id!!
+            detalles = listOf(
+                cl.clinipets.agendamiento.api.ReservaItemRequest(
+                    mascotaId = mascota.id!!,
+                    servicioId = servicio.id!!
                 )
             ),
             fechaHoraInicio = inicio,

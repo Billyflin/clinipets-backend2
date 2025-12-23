@@ -4,9 +4,13 @@ import cl.clinipets.veterinaria.api.MascotaClinicalUpdateRequest
 import cl.clinipets.veterinaria.api.MascotaCreateRequest
 import cl.clinipets.veterinaria.api.MascotaResponse
 import cl.clinipets.veterinaria.api.MascotaUpdateRequest
+import cl.clinipets.veterinaria.api.PasaporteSaludResponse
+import cl.clinipets.veterinaria.api.toDto
+import cl.clinipets.veterinaria.api.toItemResponse
 import cl.clinipets.veterinaria.api.toResponse
 import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.domain.PlanPreventivoRepository
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
@@ -22,9 +26,34 @@ import java.util.UUID
 @Service
 class MascotaService(
     private val mascotaRepository: MascotaRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val planPreventivoRepository: PlanPreventivoRepository,
+    private val signosVitalesRepository: cl.clinipets.veterinaria.domain.SignosVitalesRepository
 ) {
     private val logger = LoggerFactory.getLogger(MascotaService::class.java)
+
+    @Transactional(readOnly = true)
+    fun consultarHistorialVitals(
+        mascotaId: UUID,
+        user: JwtPayload
+    ): List<cl.clinipets.veterinaria.api.SignosVitalesDto> {
+        findMascotaDeTutor(mascotaId, user)
+        return signosVitalesRepository.findAllByMascotaIdOrderByFechaDesc(mascotaId)
+            .map { it.toDto() }
+    }
+
+    @Transactional(readOnly = true)
+    fun consultarPasaporteSalud(mascotaId: UUID, user: JwtPayload): PasaporteSaludResponse {
+        val mascota = findMascotaDeTutor(mascotaId, user)
+        val preventivos = planPreventivoRepository.findAllByMascotaIdOrderByFechaAplicacionDesc(mascotaId)
+
+        return PasaporteSaludResponse(
+            mascotaId = mascota.id!!,
+            nombreMascota = mascota.nombre,
+            especie = mascota.especie,
+            preventivos = preventivos.map { it.toItemResponse() }
+        )
+    }
 
     @Transactional
     fun crear(request: MascotaCreateRequest, tutor: JwtPayload): MascotaResponse {
