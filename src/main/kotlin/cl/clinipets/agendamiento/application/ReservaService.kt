@@ -387,11 +387,6 @@ class ReservaService(
             throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
         }
 
-        if (cita.fechaHoraInicio.isAfter(Instant.now())) {
-            logger.warn("[FINALIZAR_CITA] Intento de finalizar cita futura: {}", cita.fechaHoraInicio)
-            throw BadRequestException("No se puede finalizar una cita futura")
-        }
-
         // Finalize immediately
         cita.metodoPagoSaldo = metodoPago
         cita.staffFinalizadorId = staff.userId
