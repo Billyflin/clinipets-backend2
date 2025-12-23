@@ -105,13 +105,16 @@ class PdfService(
             ficha.pesoRegistrado ?: mascota.pesoActual.toDouble()
         )
 
-        // Secciones Médicas
+        // Signos Vitales Estructurados
+        addVitalSignsSection(document, ficha)
+
+        // Secciones Médicas (SOAP)
         addClinicalSection(document, "Motivo", ficha.motivoConsulta)
-        addClinicalSection(document, "Anamnesis", ficha.anamnesis)
-        addClinicalSection(document, "Examen Físico", ficha.examenFisico)
-        addClinicalSection(document, "Diagnóstico", ficha.diagnostico)
-        addClinicalSection(document, "Tratamiento", ficha.tratamiento)
-        ficha.observaciones?.let { addClinicalSection(document, "Observaciones", it) }
+        addClinicalSection(document, "Anamnesis (Subjetivo)", ficha.anamnesis)
+        addClinicalSection(document, "Hallazgos Objetivos (Examen Físico)", ficha.hallazgosObjetivos)
+        addClinicalSection(document, "Avalúo Clínico (Diagnóstico)", ficha.avaluoClinico)
+        addClinicalSection(document, "Plan de Tratamiento e Indicaciones", ficha.planTratamiento)
+        ficha.observaciones?.let { addClinicalSection(document, "Observaciones adicionales", it) }
 
         // Plan de Vacunación Destacado
         if (ficha.esVacuna) {
@@ -260,6 +263,36 @@ class PdfService(
         table.addCell(infoCell("Teléfono", tutorTelefono ?: "Sin registro"))
         table.addCell(infoCell("Correo", tutorCorreo ?: "Sin registro"))
         table.addCell(infoCell("Dirección", direccion ?: "Sin registro"))
+
+        document.add(table)
+    }
+
+    private fun addVitalSignsSection(document: Document, ficha: cl.clinipets.veterinaria.historial.domain.FichaClinica) {
+        val table = PdfPTable(4)
+        table.widthPercentage = 100f
+        table.setSpacingBefore(5f)
+        table.setSpacingAfter(10f)
+
+        fun addCell(label: String, value: String?, color: Color = Color(245, 249, 252)) {
+            val phrase = Phrase().apply {
+                add(Phrase("$label\n", smallFont))
+                add(Phrase(value ?: "---", boldFont))
+            }
+            table.addCell(PdfPCell(phrase).apply {
+                backgroundColor = color
+                setPadding(6f)
+                horizontalAlignment = Element.ALIGN_CENTER
+                border = Rectangle.BOX
+                borderColor = Color(220, 230, 240)
+            })
+        }
+
+        val tempColor = if (ficha.alertaVeterinaria) Color(255, 235, 235) else Color(245, 249, 252)
+
+        addCell("Temperatura", ficha.temperatura?.let { "$it°C" }, tempColor)
+        addCell("Frec. Cardíaca", ficha.frecuenciaCardiaca?.let { "$it lpm" })
+        addCell("Frec. Resp.", ficha.frecuenciaRespiratoria?.let { "$it rpm" })
+        addCell("Peso", ficha.pesoRegistrado?.let { "$it kg" })
 
         document.add(table)
     }

@@ -4,9 +4,7 @@ import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.veterinaria.domain.MascotaRepository
-import cl.clinipets.veterinaria.historial.api.FichaCreateRequest
-import cl.clinipets.veterinaria.historial.api.FichaResponse
-import cl.clinipets.veterinaria.historial.api.toResponse
+import cl.clinipets.veterinaria.historial.api.*
 import cl.clinipets.veterinaria.historial.domain.FichaClinica
 import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
 import org.slf4j.LoggerFactory
@@ -26,32 +24,40 @@ class FichaClinicaService(
 
     @Transactional
     fun crearFicha(request: FichaCreateRequest, autorId: UUID): FichaResponse {
-        logger.debug("[FICHA_SERVICE] Creando ficha para mascota {}", request.mascotaId)
+        logger.debug("[FICHA_SERVICE] Creando ficha estructurada para mascota {}", request.mascotaId)
         val mascota = mascotaRepository.findById(request.mascotaId)
             .orElseThrow { NotFoundException("Mascota no encontrada con ID: ${request.mascotaId}") }
 
+        // Lógica de Alerta Veterinaria (Ej: Fiebre)
+        val tieneAlerta = request.temperatura != null && request.temperatura > 39.5
+
+        if (tieneAlerta) {
+            logger.warn("[FICHA_SERVICE] ¡ALERTA! Mascota {} con temperatura elevada: {}", mascota.id, request.temperatura)
+        }
+
         // Actualizar peso de la mascota si viene en la ficha
         if (request.pesoRegistrado != null && request.pesoRegistrado > 0) {
-            val nuevoPeso = request.pesoRegistrado
-            logger.info("[FICHA_SERVICE] Actualizando peso mascota: {} -> {}", mascota.pesoActual, nuevoPeso)
-            mascota.pesoActual = nuevoPeso
-            // También se podría persistir mascotaRepository.save(mascota), 
-            // pero al estar en transacción y ser entidad gestionada, Hibernate lo hace al commit.
-            // Para asegurar el evento de auditoría en Mascota si lo hubiera, guardamos explícito.
-            // mascotaRepository.save(mascota) 
+            logger.info("[FICHA_SERVICE] Actualizando peso mascota: {} -> {}", mascota.pesoActual, request.pesoRegistrado)
+            mascota.pesoActual = request.pesoRegistrado
+            // recalcularPrecioCitaActiva(mascota) // Opcional si se quiere automatizar el cambio de precio
         }
 
         val ficha = fichaRepository.save(
             FichaClinica(
                 mascota = mascota,
+                citaId = request.citaId,
                 fechaAtencion = request.fechaAtencion,
                 motivoConsulta = request.motivoConsulta,
                 anamnesis = request.anamnesis,
-                examenFisico = request.examenFisico,
-                tratamiento = request.tratamiento,
+                hallazgosObjetivos = request.hallazgosObjetivos,
+                avaluoClinico = request.avaluoClinico,
+                planTratamiento = request.planTratamiento,
                 pesoRegistrado = request.pesoRegistrado,
+                temperatura = request.temperatura,
+                frecuenciaCardiaca = request.frecuenciaCardiaca,
+                frecuenciaRespiratoria = request.frecuenciaRespiratoria,
+                alertaVeterinaria = tieneAlerta,
                 observaciones = request.observaciones,
-                diagnostico = request.diagnostico,
                 esVacuna = request.esVacuna,
                 nombreVacuna = request.nombreVacuna,
                 fechaProximaVacuna = request.fechaProximaVacuna,
@@ -60,54 +66,78 @@ class FichaClinicaService(
                 autorId = autorId
             )
         )
-        logger.info("[FICHA_SERVICE] Ficha guardada con ID: {}", ficha.id)
+
+        // Si hay una cita asociada, podemos moverla a EN_ATENCION o LISTO_PARA_BOX
+        request.citaId?.let { cId ->
+            citaRepository.findById(cId).ifPresent { cita ->
+                if (cita.estado == EstadoCita.CONFIRMADA || cita.estado == EstadoCita.EN_SALA) {
+                    cita.estado = if (request.avaluoClinico.isNullOrBlank()) EstadoCita.LISTO_PARA_BOX else EstadoCita.EN_ATENCION
+                    citaRepository.save(cita)
+                }
+            }
+        }
+
+        logger.info("[FICHA_SERVICE] Ficha estructurada guardada con ID: {}", ficha.id)
         return ficha.toResponse()
     }
 
-    private fun recalcularPrecioCitaActiva(mascota: cl.clinipets.veterinaria.domain.Mascota) {
-        val citas = citaRepository.findAllByMascotaId(mascota.id!!)
-        
-        val citaActiva = citas.firstOrNull { 
-            it.estado != EstadoCita.CANCELADA && it.estado != EstadoCita.FINALIZADA
+    @Transactional
+    fun actualizarFicha(fichaId: UUID, request: FichaUpdateRequest): FichaResponse {
+        logger.debug("[FICHA_SERVICE] Actualizando ficha {}", fichaId)
+        val ficha = fichaRepository.findById(fichaId)
+            .orElseThrow { NotFoundException("Ficha clínica no encontrada") }
+
+        // Mapeo selectivo (solo si vienen datos en el request)
+        val updated = ficha.copy(
+            anamnesis = request.anamnesis ?: ficha.anamnesis,
+            hallazgosObjetivos = request.hallazgosObjetivos ?: ficha.hallazgosObjetivos,
+            avaluoClinico = request.avaluoClinico ?: ficha.avaluoClinico,
+            planTratamiento = request.planTratamiento ?: ficha.planTratamiento,
+            pesoRegistrado = request.pesoRegistrado ?: ficha.pesoRegistrado,
+            temperatura = request.temperatura ?: ficha.temperatura,
+            frecuenciaCardiaca = request.frecuenciaCardiaca ?: ficha.frecuenciaCardiaca,
+            frecuenciaRespiratoria = request.frecuenciaRespiratoria ?: ficha.frecuenciaRespiratoria,
+            observaciones = request.observaciones ?: ficha.observaciones,
+            fechaProximaVacuna = request.fechaProximaVacuna ?: ficha.fechaProximaVacuna,
+            fechaProximoControl = request.fechaProximoControl ?: ficha.fechaProximoControl,
+            fechaDesparasitacion = request.fechaDesparasitacion ?: ficha.fechaDesparasitacion,
+            // Recalcular alerta si cambió temperatura
+            alertaVeterinaria = (request.temperatura ?: ficha.temperatura)?.let { it > 39.5 } ?: ficha.alertaVeterinaria
+        )
+
+        // Actualizar peso en mascota si cambió
+        if (request.pesoRegistrado != null && request.pesoRegistrado > 0) {
+            ficha.mascota.pesoActual = request.pesoRegistrado
         }
 
-        if (citaActiva != null) {
-            logger.info("[FICHA_SERVICE] Recalculando precios para cita activa: {}", citaActiva.id)
-            var totalCalculado = 0
-            var huboCambios = false
-            
-            citaActiva.detalles.forEach { detalle ->
-                var precio = detalle.precioUnitario
-                val servicio = detalle.servicio
-                
-                if (servicio.requierePeso && detalle.mascota?.id == mascota.id) {
-                    val nuevoPrecio = servicio.calcularPrecioPara(mascota)
-                    if (nuevoPrecio != precio) {
-                        logger.info("   -> Servicio {}: Precio cambia de {} a {}", servicio.nombre, precio, nuevoPrecio)
-                        detalle.precioUnitario = nuevoPrecio
-                        precio = nuevoPrecio
-                        huboCambios = true
-                    }
-                }
-                totalCalculado += precio
-            }
-
-            if (huboCambios) {
-                logger.info("[FICHA_SERVICE] Nuevo Total Cita: {} (Antes: {})", totalCalculado, citaActiva.precioFinal)
-                citaActiva.precioFinal = totalCalculado
-                citaRepository.save(citaActiva)
-            }
-        }
+        return fichaRepository.save(updated).toResponse()
     }
 
     @Transactional(readOnly = true)
     fun obtenerHistorial(mascotaId: UUID, pageable: Pageable): Page<FichaResponse> {
-        // Verificamos que la mascota exista
         if (!mascotaRepository.existsById(mascotaId)) {
-            logger.warn("[FICHA_SERVICE] Intento de obtener historial de mascota inexistente: {}", mascotaId)
             throw NotFoundException("Mascota no encontrada con ID: $mascotaId")
         }
         return fichaRepository.findAllByMascotaIdOrderByFechaAtencionDesc(mascotaId, pageable)
             .map { it.toResponse() }
+    }
+
+    @Transactional(readOnly = true)
+    fun obtenerHistorialPeso(mascotaId: UUID): PesoHistoryResponse {
+        logger.debug("[FICHA_SERVICE] Obteniendo historial de peso para mascota {}", mascotaId)
+        val fichas = fichaRepository.findAllByMascotaIdOrderByFechaAtencionAsc(mascotaId)
+        
+        val puntos = fichas
+            .filter { it.pesoRegistrado != null }
+            .map { PesoPunto(it.fechaAtencion, it.pesoRegistrado!!) }
+
+        return PesoHistoryResponse(mascotaId, puntos)
+    }
+
+    @Transactional(readOnly = true)
+    fun obtenerFichaPorCita(citaId: UUID): FichaResponse {
+        val ficha = fichaRepository.findByCitaId(citaId)
+            ?: throw NotFoundException("No hay ficha clínica asociada a la cita $citaId")
+        return ficha.toResponse()
     }
 }

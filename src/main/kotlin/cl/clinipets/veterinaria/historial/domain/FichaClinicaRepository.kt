@@ -9,4 +9,6 @@ import java.util.UUID
 @Repository
 interface FichaClinicaRepository : JpaRepository<FichaClinica, UUID> {
     fun findAllByMascotaIdOrderByFechaAtencionDesc(mascotaId: UUID, pageable: Pageable): Page<FichaClinica>
+    fun findAllByMascotaIdOrderByFechaAtencionAsc(mascotaId: UUID): List<FichaClinica>
+    fun findByCitaId(citaId: UUID): FichaClinica?
 }

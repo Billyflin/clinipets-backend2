@@ -52,6 +52,19 @@ class FichaClinicaController(
         return ResponseEntity.status(HttpStatus.CREATED).body(ficha)
     }
 
+    @Operation(summary = "Actualizar ficha clínica (Admin/Staff)", operationId = "actualizarFicha")
+    @PutMapping("/{id}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    fun actualizarFicha(
+        @PathVariable id: UUID,
+        @Valid @RequestBody request: FichaUpdateRequest,
+        @AuthenticationPrincipal user: JwtPayload
+    ): ResponseEntity<FichaResponse> {
+        logger.info("[ACTUALIZAR_FICHA] Inicio. Staff: {}, FichaID: {}", user.email, id)
+        val ficha = fichaService.actualizarFicha(id, request)
+        return ResponseEntity.ok(ficha)
+    }
+
     @Operation(summary = "Obtener historial médico paginado", operationId = "obtenerHistorial")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Historial obtenido exitosamente"),
@@ -80,6 +93,47 @@ class FichaClinicaController(
         val historial = fichaService.obtenerHistorial(mascotaId, pageable)
         logger.info("[HISTORIAL] Fin - Registros: {}", historial.numberOfElements)
         return ResponseEntity.ok(historial)
+    }
+
+    @Operation(summary = "Obtener historial de peso (Gráfico)", operationId = "obtenerGraficoPeso")
+    @GetMapping("/mascota/{mascotaId}/grafico-peso")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CLIENT')")
+    fun obtenerGraficoPeso(
+        @PathVariable mascotaId: UUID,
+        @AuthenticationPrincipal user: JwtPayload
+    ): ResponseEntity<PesoHistoryResponse> {
+        logger.info("[PESO_GRAFICO] Solicitud. Mascota: {}, Usuario: {}", mascotaId, user.email)
+        
+        // Ownership check for CLIENT
+        if (user.role == UserRole.CLIENT) {
+            val mascota = mascotaRepository.findById(mascotaId).orElse(null)
+            if (mascota != null && mascota.tutor.id != user.userId) {
+                throw UnauthorizedException("No tiene permiso para ver los datos de esta mascota.")
+            }
+        }
+
+        return ResponseEntity.ok(fichaService.obtenerHistorialPeso(mascotaId))
+    }
+
+    @Operation(summary = "Obtener ficha por ID de cita", operationId = "obtenerFichaPorCita")
+    @GetMapping("/cita/{citaId}")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF', 'CLIENT')")
+    fun obtenerFichaPorCita(
+        @PathVariable citaId: UUID,
+        @AuthenticationPrincipal user: JwtPayload
+    ): ResponseEntity<FichaResponse> {
+        logger.info("[FICHA_CITA] Solicitud. Cita: {}, Usuario: {}", citaId, user.email)
+        val ficha = fichaService.obtenerFichaPorCita(citaId)
+        
+        // Ownership check for CLIENT
+        if (user.role == UserRole.CLIENT) {
+            val mascota = mascotaRepository.findById(ficha.mascotaId).orElse(null)
+            if (mascota != null && mascota.tutor.id != user.userId) {
+                throw UnauthorizedException("No tiene permiso para ver esta ficha.")
+            }
+        }
+        
+        return ResponseEntity.ok(ficha)
     }
 
     @Operation(summary = "Descargar PDF de ficha clínica", operationId = "descargarFichaPdf")

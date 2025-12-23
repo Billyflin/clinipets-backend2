@@ -11,15 +11,24 @@ import java.util.UUID
 data class FichaCreateRequest(
     @field:NotNull(message = "El ID de la mascota es obligatorio")
     val mascotaId: UUID,
+    val citaId: UUID? = null,
     val fechaAtencion: Instant = Instant.now(),
     @field:NotBlank(message = "El motivo de consulta es obligatorio")
     val motivoConsulta: String,
+    
+    // SOAP
     val anamnesis: String? = null,
-    val examenFisico: String? = null,
-    val tratamiento: String? = null,
+    val hallazgosObjetivos: String? = null,
+    val avaluoClinico: String? = null,
+    val planTratamiento: String? = null,
+    
+    // Constantes Vitales
     val pesoRegistrado: Double? = null,
+    val temperatura: Double? = null,
+    val frecuenciaCardiaca: Int? = null,
+    val frecuenciaRespiratoria: Int? = null,
+    
     val observaciones: String? = null,
-    val diagnostico: String? = null,
     val esVacuna: Boolean = false,
     val nombreVacuna: String? = null,
     @field:Future
@@ -29,17 +38,40 @@ data class FichaCreateRequest(
     val fechaDesparasitacion: LocalDate? = null
 )
 
+data class FichaUpdateRequest(
+    val anamnesis: String? = null,
+    val hallazgosObjetivos: String? = null,
+    val avaluoClinico: String? = null,
+    val planTratamiento: String? = null,
+    
+    // Constantes Vitales
+    val pesoRegistrado: Double? = null,
+    val temperatura: Double? = null,
+    val frecuenciaCardiaca: Int? = null,
+    val frecuenciaRespiratoria: Int? = null,
+    
+    val observaciones: String? = null,
+    val fechaProximaVacuna: LocalDate? = null,
+    val fechaProximoControl: LocalDate? = null,
+    val fechaDesparasitacion: LocalDate? = null
+)
+
 data class FichaResponse(
     val id: UUID,
     val mascotaId: UUID,
+    val citaId: UUID?,
     val fechaAtencion: Instant,
     val motivoConsulta: String,
     val anamnesis: String?,
-    val examenFisico: String?,
-    val tratamiento: String?,
+    val hallazgosObjetivos: String?,
+    val avaluoClinico: String?,
+    val planTratamiento: String?,
     val pesoRegistrado: Double?,
+    val temperatura: Double?,
+    val frecuenciaCardiaca: Int?,
+    val frecuenciaRespiratoria: Int?,
+    val alertaVeterinaria: Boolean,
     val observaciones: String?,
-    val diagnostico: String?,
     val esVacuna: Boolean,
     val nombreVacuna: String?,
     val fechaProximaVacuna: LocalDate?,
@@ -48,17 +80,32 @@ data class FichaResponse(
     val autorId: UUID
 )
 
+data class PesoPunto(
+    val fecha: Instant,
+    val peso: Double
+)
+
+data class PesoHistoryResponse(
+    val mascotaId: UUID,
+    val puntos: List<PesoPunto>
+)
+
 fun FichaClinica.toResponse() = FichaResponse(
     id = id!!,
     mascotaId = mascota.id!!,
+    citaId = citaId,
     fechaAtencion = fechaAtencion,
     motivoConsulta = motivoConsulta,
     anamnesis = anamnesis,
-    examenFisico = examenFisico,
-    tratamiento = tratamiento,
+    hallazgosObjetivos = hallazgosObjetivos,
+    avaluoClinico = avaluoClinico,
+    planTratamiento = planTratamiento,
     pesoRegistrado = pesoRegistrado,
+    temperatura = temperatura,
+    frecuenciaCardiaca = frecuenciaCardiaca,
+    frecuenciaRespiratoria = frecuenciaRespiratoria,
+    alertaVeterinaria = alertaVeterinaria,
     observaciones = observaciones,
-    diagnostico = diagnostico,
     esVacuna = esVacuna,
     nombreVacuna = nombreVacuna,
     fechaProximaVacuna = fechaProximaVacuna,
