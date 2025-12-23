@@ -11,6 +11,7 @@ import java.time.LocalDate
 data class PrecioCalculado(
     val precioFinal: Int,
     val precioOriginal: Int,
+    val abono: Int,
     val descuentoAplicado: Boolean,
     val notas: List<String>
 )
@@ -44,6 +45,7 @@ class PricingCalculator(
         return PrecioCalculado(
             precioFinal = precioFinal,
             precioOriginal = precioBase,
+            abono = servicio.precioAbono ?: 0,
             descuentoAplicado = deltaDescuento > 0,
             notas = detallePromo?.notas?.toList() ?: emptyList()
         )

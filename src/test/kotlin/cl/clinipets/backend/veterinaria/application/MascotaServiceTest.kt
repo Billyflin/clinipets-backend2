@@ -2,8 +2,9 @@ package cl.clinipets.backend.veterinaria.application
 
 import cl.clinipets.veterinaria.api.MascotaCreateRequest
 import cl.clinipets.veterinaria.domain.Especie
-import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.domain.Sexo
+import cl.clinipets.agendamiento.domain.CitaRepository
+import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.identity.domain.User
 import cl.clinipets.identity.domain.UserRepository
@@ -35,7 +36,8 @@ import java.time.ZoneId
 class MascotaServiceTest(
     @Autowired private val mascotaService: MascotaService,
     @Autowired private val userRepository: UserRepository,
-    @Autowired private val mascotaRepository: MascotaRepository
+    @Autowired private val mascotaRepository: MascotaRepository,
+    @Autowired private val citaRepository: CitaRepository
 ) {
     @MockBean
     private lateinit var storageService: StorageService
@@ -45,6 +47,7 @@ class MascotaServiceTest(
 
     @BeforeEach
     fun setup() {
+        citaRepository.deleteAll()
         mascotaRepository.deleteAll()
         userRepository.deleteAll()
 
