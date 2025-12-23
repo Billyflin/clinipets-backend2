@@ -1,9 +1,6 @@
 package cl.clinipets.core.security
 
-import cl.clinipets.identity.domain.AuthProvider
-import cl.clinipets.identity.domain.User
-import cl.clinipets.identity.domain.UserRepository
-import cl.clinipets.identity.domain.UserRole
+import cl.clinipets.identity.application.AuthService
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseToken
 import jakarta.servlet.FilterChain
@@ -19,7 +16,7 @@ import java.time.Instant
 
 @Component
 class FirebaseFilter(
-    private val userRepository: UserRepository
+    private val authService: AuthService
 ) : OncePerRequestFilter() {
 
     private val logger = LoggerFactory.getLogger(FirebaseFilter::class.java)
@@ -34,51 +31,30 @@ class FirebaseFilter(
             val token = header.substring(7)
             try {
                 // 1. Verificar token con Firebase
-                // Esto lanzará excepción si el token es inválido o expirado
                 val decodedToken: FirebaseToken = FirebaseAuth.getInstance().verifyIdToken(token)
 
-                val email = decodedToken.email
-                val uid = decodedToken.uid
-                val name = decodedToken.name ?: "Usuario App"
-                val picture = decodedToken.picture
+                // 2. Delegar sincronización/creación al servicio
+                // Esto asegura que el usuario exista en nuestra BD y tenga el rol correcto
+                val user = authService.syncFirebaseUser(decodedToken)
 
-                if (email != null) {
-                    // 2. Sincronizar usuario en DB (Lazy Registration)
-                    var user = userRepository.findByEmailIgnoreCase(email)
+                // 3. Construir Principal
+                val principal = JwtPayload(
+                    userId = user.id!!,
+                    email = user.email,
+                    role = user.role,
+                    expiresAt = Instant.now().plusSeconds(3600) // Validez manejada por Firebase en realidad
+                )
 
-                    if (user == null) {
-                        logger.info("[FIREBASE_AUTH] Usuario nuevo detectado: $email. Creando registro...")
-                        val newUser = User(
-                            email = email,
-                            name = name,
-                            passwordHash = "{noop}firebase_uid_$uid",
-                            authProvider = AuthProvider.GOOGLE, // Asumimos Google/Firebase por defecto
-                            role = UserRole.CLIENT,
-                            photoUrl = picture,
-                            phoneVerified = true // Firebase verified
-                        )
-                        user = userRepository.save(newUser)
-                    }
+                val authorities = listOf(SimpleGrantedAuthority("ROLE_${user.role.name}"))
+                val authentication = UsernamePasswordAuthenticationToken(principal, token, authorities)
 
-                    // 3. Construir Principal compatible con los Controllers existentes
-                    val principal = JwtPayload(
-                        userId = user!!.id!!,
-                        email = user.email,
-                        role = user.role,
-                        expiresAt = Instant.now().plusSeconds(3600) // Dummy validity
-                    )
-
-                    val authorities = listOf(SimpleGrantedAuthority("ROLE_${user.role.name}"))
-                    val authentication = UsernamePasswordAuthenticationToken(principal, token, authorities)
-
-                    SecurityContextHolder.getContext().authentication = authentication
-                } else {
-                    logger.warn("[FIREBASE_AUTH] Token válido pero sin email. UID: $uid")
-                }
+                SecurityContextHolder.getContext().authentication = authentication
 
             } catch (e: Exception) {
                 logger.error("[FIREBASE_AUTH] Error validando token: ${e.message}")
                 SecurityContextHolder.clearContext()
+                // Opcional: response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid Token")
+                // Pero dejamos que SecurityFilterChain maneje el rechazo si es necesario.
             }
         }
         filterChain.doFilter(request, response)

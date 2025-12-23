@@ -41,20 +41,13 @@ dependencies {
     implementation("org.springframework.retry:spring-retry")
     implementation("org.springframework:spring-aspects")
 
-    // Google ID Token verification
-    implementation("com.google.api-client:google-api-client:2.8.1")
-    implementation("com.google.http-client:google-http-client-jackson2:1.43.3")
     implementation("com.google.firebase:firebase-admin:9.2.0")
 
     implementation("com.google.guava:guava:32.0.1-jre")
     implementation("io.minio:minio:8.5.7")
     implementation("com.github.librepdf:openpdf:1.3.39")
 
-    // JWT
-    implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     implementation("org.springframework.boot:spring-boot-starter-actuator")
-    runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
-    runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
     // springdoc: actualizar a versión compatible con Spring Boot 3.5
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13")
 
