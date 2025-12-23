@@ -52,7 +52,7 @@ data class FichaClinica(
     @Column(nullable = true)
     val frecuenciaRespiratoria: Int? = null,
 
-    @Column(nullable = false)
+    @Column(nullable = false, columnDefinition = "boolean default false")
     val alertaVeterinaria: Boolean = false,
 
     @Column(columnDefinition = "TEXT")
