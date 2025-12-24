@@ -15,25 +15,25 @@ class RestExceptionHandler {
     @ExceptionHandler(NotFoundException::class)
     fun handleNotFound(ex: NotFoundException, request: HttpServletRequest): ResponseEntity<ApiError> {
         logger.warn("NotFound: {} [{}]", ex.message, request.servletPath)
-        return buildError(HttpStatus.NOT_FOUND, ex, request)
+        return buildError(HttpStatus.NOT_FOUND, ex, request, "NOT_FOUND")
     }
 
     @ExceptionHandler(ConflictException::class)
     fun handleConflict(ex: ConflictException, request: HttpServletRequest): ResponseEntity<ApiError> {
         logger.warn("Conflict: {} [{}]", ex.message, request.servletPath)
-        return buildError(HttpStatus.CONFLICT, ex, request)
+        return buildError(HttpStatus.CONFLICT, ex, request, "CONFLICT")
     }
 
     @ExceptionHandler(UnauthorizedException::class)
     fun handleUnauthorized(ex: UnauthorizedException, request: HttpServletRequest): ResponseEntity<ApiError> {
         logger.warn("Unauthorized: {} [{}]", ex.message, request.servletPath)
-        return buildError(HttpStatus.UNAUTHORIZED, ex, request)
+        return buildError(HttpStatus.UNAUTHORIZED, ex, request, "UNAUTHORIZED")
     }
 
     @ExceptionHandler(BadRequestException::class, IllegalArgumentException::class)
     fun handleBadRequest(ex: Exception, request: HttpServletRequest): ResponseEntity<ApiError> {
         logger.warn("BadRequest: {} [{}]", ex.message, request.servletPath)
-        return buildError(HttpStatus.BAD_REQUEST, ex, request)
+        return buildError(HttpStatus.BAD_REQUEST, ex, request, "BAD_REQUEST")
     }
 
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException::class)
@@ -42,28 +42,37 @@ class RestExceptionHandler {
         request: HttpServletRequest
     ): ResponseEntity<ApiError> {
         logger.warn("AccessDenied: {} [{}]", ex.message, request.servletPath)
-        return buildError(HttpStatus.FORBIDDEN, ex, request)
+        return buildError(HttpStatus.FORBIDDEN, ex, request, "FORBIDDEN")
     }
 
     @ExceptionHandler(MethodArgumentNotValidException::class)
     fun handleValidation(ex: MethodArgumentNotValidException, request: HttpServletRequest): ResponseEntity<ApiError> {
-        val fieldError = ex.bindingResult.fieldError
-        val message = fieldError?.defaultMessage ?: "Datos inválidos"
+        val validationErrors = ex.bindingResult.fieldErrors.map { "${it.field}: ${it.defaultMessage}" }
+        val message = "Error de validación"
         logger.warn("Validation Error: {} [{}]", message, request.servletPath)
-        return buildError(HttpStatus.BAD_REQUEST, IllegalArgumentException(message), request)
+        return buildError(HttpStatus.BAD_REQUEST, ex, request, "VALIDATION_ERROR", validationErrors)
     }
 
     @ExceptionHandler(Exception::class)
     fun handleGeneric(ex: Exception, request: HttpServletRequest): ResponseEntity<ApiError> {
         logger.error("Internal Server Error at [{}]: {}", request.servletPath, ex.message, ex)
-        return buildError(HttpStatus.INTERNAL_SERVER_ERROR, ex, request)
+        return buildError(HttpStatus.INTERNAL_SERVER_ERROR, ex, request, "INTERNAL_ERROR")
     }
 
-    private fun buildError(status: HttpStatus, ex: Exception, request: HttpServletRequest): ResponseEntity<ApiError> {
+    private fun buildError(
+        status: HttpStatus,
+        ex: Exception,
+        request: HttpServletRequest,
+        code: String,
+        validationErrors: List<String>? = null
+    ): ResponseEntity<ApiError> {
+        val message = if (code == "VALIDATION_ERROR") "Error de validación" else (ex.message ?: status.reasonPhrase)
         val apiError = ApiError(
-            message = ex.message ?: status.reasonPhrase,
+            message = message,
+            code = code,
             status = status.value(),
-            path = request.servletPath
+            path = request.servletPath,
+            validationErrors = validationErrors
         )
         return ResponseEntity.status(status).body(apiError)
     }
