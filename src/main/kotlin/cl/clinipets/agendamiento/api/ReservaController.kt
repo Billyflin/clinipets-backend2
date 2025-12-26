@@ -201,4 +201,18 @@ class ReservaController(
         logger.info("[AGENDA_DIARIA] Fin request - Citas: {}", agenda.size)
         return ResponseEntity.ok(agenda)
     }
+
+    @Operation(summary = "Buscar citas por estado", operationId = "buscarPorEstado")
+    @GetMapping("/buscar")
+    @PreAuthorize("hasAnyRole('STAFF', 'ADMIN')")
+    fun buscarPorEstado(
+        @RequestParam(required = false) estado: cl.clinipets.agendamiento.domain.EstadoCita?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fechaDesde: LocalDate?,
+        @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fechaHasta: LocalDate?
+    ): ResponseEntity<List<CitaDetalladaResponse>> {
+        logger.info("[BUSCAR_CITAS] Estado: $estado, Desde: $fechaDesde, Hasta: $fechaHasta")
+
+        val resultados = reservaService.buscarCitas(estado, fechaDesde, fechaHasta)
+        return ResponseEntity.ok(resultados)
+    }
 }

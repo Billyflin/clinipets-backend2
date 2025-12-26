@@ -71,4 +71,17 @@ class Cita(
     override fun hashCode(): Int = id?.hashCode() ?: 0
 
     override fun toString(): String = "Cita(id=$id, inicio=$fechaHoraInicio, estado=$estado)"
+
+    /**
+     * Cambia el estado de la cita validando que la transición sea permitida
+     * @param nuevoEstado Estado al que se desea cambiar
+     * @param responsable Email del usuario que realiza el cambio (para auditoría)
+     */
+    fun cambiarEstado(nuevoEstado: EstadoCita, responsable: String) {
+        EstadoCitaTransiciones.validarTransicion(this.estado, nuevoEstado)
+        val estadoAnterior = this.estado
+        this.estado = nuevoEstado
+        org.slf4j.LoggerFactory.getLogger(Cita::class.java)
+            .info("[CITA] Estado cambiado: $estadoAnterior → $nuevoEstado por $responsable (Cita ID: $id)")
+    }
 }

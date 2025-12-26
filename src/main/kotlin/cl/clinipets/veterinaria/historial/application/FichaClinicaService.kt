@@ -67,12 +67,16 @@ class FichaClinicaService(
             )
         )
 
-        // Si hay una cita asociada, podemos moverla a EN_ATENCION o LISTO_PARA_BOX
+        // Si hay una cita asociada, moverla a EN_ATENCION si aún está CONFIRMADA
         request.citaId?.let { cId ->
             citaRepository.findById(cId).ifPresent { cita ->
-                if (cita.estado == EstadoCita.CONFIRMADA || cita.estado == EstadoCita.LLEGADA) {
-                    cita.estado = if (request.avaluoClinico.isNullOrBlank()) EstadoCita.LISTO_PARA_BOX else EstadoCita.EN_ATENCION
-                    citaRepository.save(cita)
+                if (cita.estado == EstadoCita.CONFIRMADA) {
+                    try {
+                        cita.cambiarEstado(EstadoCita.EN_ATENCION, autorId.toString())
+                        citaRepository.save(cita)
+                    } catch (e: Exception) {
+                        logger.warn("No se pudo cambiar estado de cita $cId: ${e.message}")
+                    }
                 }
             }
         }

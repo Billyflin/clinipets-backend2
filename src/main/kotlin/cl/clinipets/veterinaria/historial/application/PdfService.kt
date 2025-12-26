@@ -9,6 +9,9 @@ import cl.clinipets.core.storage.StorageService
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRole
+import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.domain.PlanPreventivoRepository
+import cl.clinipets.veterinaria.domain.TipoPreventivo
 import cl.clinipets.veterinaria.galeria.domain.MascotaMediaRepository
 import cl.clinipets.veterinaria.galeria.domain.MediaType
 import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
@@ -29,8 +32,10 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.awt.Color
 import java.io.ByteArrayOutputStream
+import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
@@ -43,11 +48,13 @@ class PdfService(
     private val storageService: StorageService,
     private val clinicProperties: ClinicProperties,
     private val clinicZoneId: ZoneId,
-    private val userRepository: cl.clinipets.identity.domain.UserRepository
+    private val userRepository: cl.clinipets.identity.domain.UserRepository,
+    private val mascotaRepository: MascotaRepository,
+    private val planPreventivoRepository: PlanPreventivoRepository
 ) {
     private val logger = LoggerFactory.getLogger(PdfService::class.java)
 
-    // Fuentes configuradas (Ver FontFactoryHelper abajo para el fix)
+    // Fuentes configuradas
     private val baseFont: Font = FontFactoryHelper.base(10f)
     private val smallFont: Font = FontFactoryHelper.base(9f)
     private val boldFont: Font = FontFactoryHelper.bold(11f)
@@ -56,6 +63,7 @@ class PdfService(
     private val noteFont: Font = FontFactoryHelper.base(8f)
     private val headerFont: Font = FontFactoryHelper.bold(13f, Color(0, 122, 163))
     private val vaccineFont: Font = FontFactoryHelper.bold(14f, Color(0, 100, 0))
+    private val alertFont: Font = FontFactoryHelper.bold(10f, Color.RED)
 
     data class FinancialSummary(
         val servicioNombre: String,
@@ -129,6 +137,244 @@ class PdfService(
 
         document.close()
         return baos.toByteArray()
+    }
+
+    @Transactional(readOnly = true)
+    fun generarCarnetSanitarioPdf(mascotaId: UUID, user: JwtPayload): ByteArray {
+        logger.info("[CARNET_PDF] Generando PDF para mascota $mascotaId")
+
+        val mascota = mascotaRepository.findById(mascotaId)
+            .orElseThrow { NotFoundException("Mascota no encontrada: $mascotaId") }
+
+        if (user.role == UserRole.CLIENT && mascota.tutor.id != user.userId) {
+            throw UnauthorizedException("No tienes permiso para ver este carnet")
+        }
+
+        val preventivos = planPreventivoRepository.findAllByMascotaIdOrderByFechaAplicacionDesc(mascotaId)
+        val outputStream = ByteArrayOutputStream()
+        val document = Document(PageSize.A4, 40f, 40f, 40f, 40f)
+        PdfWriter.getInstance(document, outputStream)
+
+        document.open()
+
+        // Logo
+        try {
+            val logoPath = clinicProperties.logoPath
+            if (!logoPath.isNullOrBlank()) {
+                val logoStream = storageService.getFile(logoPath)
+                val logoBytes = logoStream.readAllBytes()
+                val logo = Image.getInstance(logoBytes)
+                logo.scaleToFit(150f, 60f)
+                logo.alignment = Element.ALIGN_CENTER
+                document.add(logo)
+            }
+        } catch (ex: Exception) {
+            logger.warn("[CARNET_PDF] No se pudo cargar el logo: ${ex.message}")
+        }
+
+        // Título
+        val titulo = Paragraph("CARNET SANITARIO", titleFont).apply {
+            alignment = Element.ALIGN_CENTER
+            spacingAfter = 20f
+        }
+        document.add(titulo)
+
+        // Info Clínica
+        val clinicInfo = Paragraph().apply {
+            add(Phrase("${clinicProperties.name}\n", boldFont))
+            add(Phrase("${clinicProperties.address}\n", baseFont))
+            add(Phrase("Tel: ${clinicProperties.phone}\n", baseFont))
+            alignment = Element.ALIGN_CENTER
+            spacingAfter = 20f
+        }
+        document.add(clinicInfo)
+
+        // Datos Mascota
+        val tablaMascota = PdfPTable(2).apply {
+            widthPercentage = 100f
+            setWidths(floatArrayOf(1f, 2f))
+            setSpacingAfter(20f)
+        }
+
+        fun agregarFila(label: String, valor: String) {
+            val l = PdfPCell(Phrase(label, boldFont)).apply {
+                border = Rectangle.NO_BORDER
+                setPadding(5f)
+            }
+            val v = PdfPCell(Phrase(valor, baseFont)).apply {
+                border = Rectangle.NO_BORDER
+                setPadding(5f)
+            }
+            tablaMascota.addCell(l)
+            tablaMascota.addCell(v)
+        }
+
+        agregarFila("Nombre:", mascota.nombre)
+        agregarFila("Especie:", mascota.especie.toString())
+        agregarFila("Raza:", mascota.raza)
+        agregarFila("Fecha Nacimiento:", mascota.fechaNacimiento?.toString() ?: "Sin registro")
+        mascota.chipIdentificador?.let { agregarFila("Chip:", it) }
+        agregarFila("Tutor:", mascota.tutor.name)
+        document.add(tablaMascota)
+
+        // Vacunas
+        val tituloVacunas = Paragraph("VACUNAS", sectionFont).apply {
+            spacingBefore = 10f
+            spacingAfter = 10f
+        }
+        document.add(tituloVacunas)
+
+        val vacunas = preventivos.filter { it.tipo == TipoPreventivo.VACUNA }
+        if (vacunas.isNotEmpty()) {
+            val tablaVacunas = PdfPTable(4).apply {
+                widthPercentage = 100f
+                setWidths(floatArrayOf(3f, 2f, 2f, 2f))
+                setSpacingAfter(20f)
+            }
+
+            fun addHeader(text: String) {
+                tablaVacunas.addCell(PdfPCell(Phrase(text, boldFont)).apply {
+                    backgroundColor = Color(220, 220, 220)
+                    setPadding(5f)
+                    horizontalAlignment = Element.ALIGN_CENTER
+                })
+            }
+            addHeader("Producto")
+            addHeader("Fecha Aplicación")
+            addHeader("Fecha Refuerzo")
+            addHeader("Lote")
+
+            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("es", "CL"))
+                .withZone(clinicZoneId)
+
+            vacunas.forEach { v ->
+                fun addCell(text: String) = tablaVacunas.addCell(PdfPCell(Phrase(text, baseFont)).apply { setPadding(5f) })
+                addCell(v.producto)
+                addCell(formatter.format(v.fechaAplicacion))
+                addCell(v.fechaRefuerzo?.let { formatter.format(it) } ?: "-")
+                addCell(v.lote ?: "-")
+            }
+            document.add(tablaVacunas)
+        } else {
+            document.add(Paragraph("No se han registrado vacunas", smallFont).apply { spacingAfter = 20f })
+        }
+
+        // Desparasitaciones
+        val tituloDesp = Paragraph("DESPARASITACIONES", sectionFont).apply {
+            spacingBefore = 10f
+            spacingAfter = 10f
+        }
+        document.add(tituloDesp)
+
+        val desparasitaciones = preventivos.filter { 
+            it.tipo == TipoPreventivo.DESPARASITACION_INTERNA || it.tipo == TipoPreventivo.DESPARASITACION_EXTERNA 
+        }
+
+        if (desparasitaciones.isNotEmpty()) {
+            val tablaDesp = PdfPTable(4).apply {
+                widthPercentage = 100f
+                setWidths(floatArrayOf(2f, 3f, 2f, 2f))
+                setSpacingAfter(20f)
+            }
+
+            fun addHeader(text: String) {
+                tablaDesp.addCell(PdfPCell(Phrase(text, boldFont)).apply {
+                    backgroundColor = Color(220, 220, 220)
+                    setPadding(5f)
+                    horizontalAlignment = Element.ALIGN_CENTER
+                })
+            }
+            addHeader("Tipo")
+            addHeader("Producto")
+            addHeader("Fecha Aplicación")
+            addHeader("Fecha Refuerzo")
+
+            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("es", "CL"))
+                .withZone(clinicZoneId)
+
+            desparasitaciones.forEach { d ->
+                fun addCell(text: String) = tablaDesp.addCell(PdfPCell(Phrase(text, baseFont)).apply { setPadding(5f) })
+                addCell(when(d.tipo) {
+                    TipoPreventivo.DESPARASITACION_INTERNA -> "Interna"
+                    TipoPreventivo.DESPARASITACION_EXTERNA -> "Externa"
+                    else -> d.tipo.toString()
+                })
+                addCell(d.producto)
+                addCell(formatter.format(d.fechaAplicacion))
+                addCell(d.fechaRefuerzo?.let { formatter.format(it) } ?: "-")
+            }
+            document.add(tablaDesp)
+        } else {
+            document.add(Paragraph("No se han registrado desparasitaciones", smallFont).apply { spacingAfter = 20f })
+        }
+
+        // Próximos Refuerzos
+        val ahora = Instant.now()
+        val proximos = preventivos
+            .filter { it.fechaRefuerzo != null && it.fechaRefuerzo!! > ahora }
+            .sortedBy { it.fechaRefuerzo }
+
+        if (proximos.isNotEmpty()) {
+            document.add(Paragraph("PRÓXIMOS REFUERZOS", sectionFont).apply {
+                spacingBefore = 10f
+                spacingAfter = 10f
+            })
+
+            val tablaRef = PdfPTable(3).apply {
+                widthPercentage = 100f
+                setWidths(floatArrayOf(3f, 2f, 2f))
+                setSpacingAfter(20f)
+            }
+
+            fun addHeader(text: String) {
+                tablaRef.addCell(PdfPCell(Phrase(text, boldFont)).apply {
+                    backgroundColor = Color(220, 220, 220)
+                    setPadding(5f)
+                    horizontalAlignment = Element.ALIGN_CENTER
+                })
+            }
+            addHeader("Producto")
+            addHeader("Fecha Programada")
+            addHeader("Días Restantes")
+
+            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("es", "CL"))
+                .withZone(clinicZoneId)
+
+            proximos.forEach { p ->
+                val dias = ChronoUnit.DAYS.between(ahora, p.fechaRefuerzo)
+                val alerta = dias <= 7
+                val fontToUse = if (alerta) alertFont else baseFont
+                val bg = if (alerta) Color(255, 255, 200) else null
+
+                fun addCell(text: String) {
+                    tablaRef.addCell(PdfPCell(Phrase(text, fontToUse)).apply {
+                        setPadding(5f)
+                        if (bg != null) backgroundColor = bg
+                    })
+                }
+                addCell(p.producto)
+                addCell(formatter.format(p.fechaRefuerzo))
+                addCell("$dias días" + if (alerta) " ⚠" else "")
+            }
+            document.add(tablaRef)
+
+            document.add(Paragraph("⚠ Los refuerzos marcados en amarillo requieren atención en 7 días o menos", smallFont).apply {
+                spacingAfter = 10f
+            })
+        }
+
+        // Footer
+        val fechaEmision = Paragraph(
+            "Documento generado el ${DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale("es", "CL")).withZone(clinicZoneId).format(Instant.now())}",
+            smallFont
+        ).apply {
+            alignment = Element.ALIGN_CENTER
+            spacingBefore = 30f
+        }
+        document.add(fechaEmision)
+
+        document.close()
+        return outputStream.toByteArray()
     }
 
     private fun addHeader(document: Document) {
@@ -380,8 +626,7 @@ class PdfService(
         if (mascotaId == null) return
 
         val foto = mascotaMediaRepository.findAllByMascotaIdOrderByFechaSubidaDesc(mascotaId)
-            .firstOrNull { it.tipo == MediaType.IMAGE }
-            ?: run {
+            .firstOrNull { it.tipo == MediaType.IMAGE } ?: run {
                 logger.info("[PDF] Mascota {} sin foto asociada para la ficha", mascotaId)
                 return
             }
@@ -413,8 +658,7 @@ class PdfService(
         val citas = citaRepository.findAllByMascotaId(mascotaId)
         val fechaLocal = fechaFicha.atZone(clinicZoneId).toLocalDate()
         // Buscamos una cita que coincida exactamente con la fecha, o la más reciente
-        return citas.firstOrNull { it.fechaHoraInicio.atZone(clinicZoneId).toLocalDate() == fechaLocal }
-            ?: citas.firstOrNull()
+        return citas.firstOrNull { it.fechaHoraInicio.atZone(clinicZoneId).toLocalDate() == fechaLocal } ?: citas.firstOrNull()
     }
 
     private fun buildFinancialSummary(cita: Cita?, fallbackLabel: String): FinancialSummary {
@@ -459,14 +703,14 @@ class PdfService(
             minimumFractionDigits = 0
             maximumFractionDigits = 0
         }
-        return "$${formatter.format(amount)}"
+        return "$$${formatter.format(amount)}"
     }
 }
 
-// -----------------------------------------------------------
+// ----------------------------------------------------------- 
 // HELPER PARA FUENTES (CORREGIDO)
-// -----------------------------------------------------------
-private object FontFactoryHelper {
+// ----------------------------------------------------------- 
+object FontFactoryHelper {
     // FIX: Usar BaseFont.WINANSI (CP1252) en lugar de IDENTITY_H para fuentes estándar.
     // Esto soporta tildes y eñes sin requerir un archivo .ttf externo.
 
@@ -474,7 +718,7 @@ private object FontFactoryHelper {
         com.lowagie.text.FontFactory.getFont(
             com.lowagie.text.FontFactory.HELVETICA,
             BaseFont.WINANSI, // <--- CAMBIO CLAVE AQUÍ
-            BaseFont.EMBEDDED,
+            true,
             size,
             Font.NORMAL,
             color
@@ -484,7 +728,7 @@ private object FontFactoryHelper {
         com.lowagie.text.FontFactory.getFont(
             com.lowagie.text.FontFactory.HELVETICA_BOLD,
             BaseFont.WINANSI, // <--- CAMBIO CLAVE AQUÍ
-            BaseFont.EMBEDDED,
+            true,
             size,
             Font.BOLD,
             color

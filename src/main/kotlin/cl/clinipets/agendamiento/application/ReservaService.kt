@@ -18,6 +18,7 @@ import org.springframework.context.ApplicationEventPublisher
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.transaction.support.TransactionTemplate
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -37,7 +38,8 @@ class ReservaService(
     private val clinicalValidator: ClinicalValidator,
     private val signosVitalesRepository: cl.clinipets.veterinaria.domain.SignosVitalesRepository,
     private val clinicZoneId: ZoneId,
-    private val eventPublisher: ApplicationEventPublisher
+    private val eventPublisher: ApplicationEventPublisher,
+    private val transactionTemplate: TransactionTemplate
 ) {
     private val logger = LoggerFactory.getLogger(ReservaService::class.java)
 
@@ -124,6 +126,17 @@ class ReservaService(
             throw NotFoundException("Mascotas no encontradas: $missing")
         }
 
+        // === VALIDAR STOCK ANTES DE PROCEDER ===
+        logger.info("[RESERVA] Validando disponibilidad de stock...")
+        detalles.forEach { item ->
+            val disponible = inventarioService.validarDisponibilidadStock(item.servicioId, item.cantidad)
+            if (!disponible) {
+                val servicio = serviciosMap[item.servicioId]!!
+                throw BadRequestException("Stock insuficiente para: ${servicio.nombre}")
+            }
+        }
+        logger.info("[RESERVA] Stock validado correctamente")
+
         val fechaCita = fechaHoraInicio.atZone(clinicZoneId).toLocalDate()
         var totalPrecio = 0
         var duracionTotalMinutos = 0L
@@ -136,14 +149,8 @@ class ReservaService(
             val servicio = serviciosMap[item.servicioId]!!
             if (!servicio.activo) throw BadRequestException("Servicio inactivo: ${servicio.nombre}")
 
-            // Validar stock de insumos antes de proceder
-            val stockDisponible = servicio.insumos.filter { it.critico }.all { si ->
-                si.insumo.stockActual >= (si.cantidadRequerida * item.cantidad)
-            }
-            if (!stockDisponible) throw BadRequestException("No hay stock suficiente para el servicio: ${servicio.nombre}")
-
             clinicalValidator.validarRequisitosClinicos(servicio, mascota, serviciosIds)
-            
+
             val precioCalculado = pricingCalculator.calcularPrecioFinal(servicio, mascota, fechaCita)
 
             val precioItem = precioCalculado.precioFinal * item.cantidad
@@ -155,15 +162,34 @@ class ReservaService(
             }
         }
 
-        // Validación de Disponibilidad
+        // Validación de Disponibilidad - Validar que TODOS los slots necesarios estén disponibles
         val fechaNormalizada = fechaHoraInicio.truncatedTo(ChronoUnit.MINUTES)
         if (duracionTotalMinutos > 0) {
             val slotsDisponibles = disponibilidadService.obtenerSlots(fechaCita, duracionTotalMinutos.toInt())
-            val slotValido = slotsDisponibles.any { it.compareTo(fechaNormalizada) == 0 }
 
-            if (!slotValido) {
-                throw BadRequestException("No hay disponibilidad para la duración total ($duracionTotalMinutos min) en el horario seleccionado")
+            // Calcular todos los slots de 15 minutos que necesita la cita
+            val finRequerido = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
+            val slotsNecesarios = mutableListOf<Instant>()
+            var cursor = fechaNormalizada
+
+            while (cursor < finRequerido) {
+                slotsNecesarios.add(cursor)
+                cursor = cursor.plus(15, ChronoUnit.MINUTES) // Intervalos de 15 min
             }
+
+            // Verificar que TODOS los slots necesarios estén disponibles
+            val todosDisponibles = slotsNecesarios.all { slot ->
+                slotsDisponibles.any { it.compareTo(slot) == 0 }
+            }
+
+            if (!todosDisponibles) {
+                throw BadRequestException(
+                    "No hay disponibilidad continua para la duración total ($duracionTotalMinutos min). " +
+                    "Algunos slots están ocupados."
+                )
+            }
+
+            logger.info("[RESERVA] Validados ${slotsNecesarios.size} slots continuos desde $fechaNormalizada")
         }
 
         val fechaHoraFin = fechaNormalizada.plus(duracionTotalMinutos, ChronoUnit.MINUTES)
@@ -204,7 +230,7 @@ class ReservaService(
             logger.warn("[CONFIRMAR_RESERVA] Usuario {} intentó confirmar cita ajena {}", tutor.email, id)
             throw UnauthorizedException("No puedes confirmar esta cita")
         }
-        cita.estado = EstadoCita.CONFIRMADA
+        cita.cambiarEstado(EstadoCita.CONFIRMADA, tutor.email)
         val saved = citaRepository.save(cita)
 
         logger.info("AUDIT: Cita $id movida a CONFIRMADA por ${tutor.email}")
@@ -230,7 +256,7 @@ class ReservaService(
         // Reponer stock si corresponde
         reponerStock(cita)
 
-        cita.estado = EstadoCita.CANCELADA
+        cita.cambiarEstado(EstadoCita.CANCELADA, tutor.email)
         val saved = citaRepository.save(cita)
 
         logger.info("AUDIT: Cita $id movida a CANCELADA por ${tutor.email}")
@@ -287,7 +313,7 @@ class ReservaService(
         return citas.map { it.toDetalladaResponse() }
     }
 
-    @Transactional
+    // NOT @Transactional at method level to allow manual handling of rollback scenario
     fun finalizarCita(id: UUID, request: FinalizarCitaRequest?, staff: JwtPayload): Cita {
         val metodoPago = request?.metodoPago
         logger.info("[FINALIZAR_CITA] Request. CitaID: {}, Staff: {}, Metodo: {}", id, staff.email, metodoPago)
@@ -305,35 +331,55 @@ class ReservaService(
             throw BadRequestException("La cita no se puede finalizar porque está en estado ${cita.estado}")
         }
 
-        // 1. Descontar stock e insumos al finalizar la atención
-        cita.detalles.forEach { detalle ->
-            logger.info("[STOCK] Consumiendo stock para servicio: {} en cita {}", detalle.servicio.nombre, id)
-            inventarioService.consumirStock(detalle.servicio.id!!, 1, "Cita $id")
+        return try {
+            val saved = transactionTemplate.execute {
+                // 1. Consumir stock
+                cita.detalles.forEach { detalle ->
+                    logger.info("[FINALIZAR] Consumiendo stock para ${detalle.servicio.nombre}")
+                    inventarioService.consumirStock(detalle.servicio.id!!, 1, "Cita $id")
 
-            // Registrar Signos Vitales si vienen en el request para esta mascota
-            val mascotaVal = detalle.mascota
-            if (mascotaVal != null) {
-                request?.signosVitales?.get(mascotaVal.id)?.let { svReq ->
-                    val sv = cl.clinipets.veterinaria.domain.SignosVitales(
-                        mascota = mascotaVal,
-                        peso = svReq.peso,
-                        temperatura = svReq.temperatura,
-                        frecuenciaCardiaca = svReq.frecuenciaCardiaca
-                    )
-                    signosVitalesRepository.save(sv)
-                    logger.info("[CLINICO] Signos vitales registrados para mascota {}", mascotaVal.id)
+                    // Registrar Signos Vitales si vienen en el request
+                    val mascotaVal = detalle.mascota
+                    if (mascotaVal != null) {
+                        request?.signosVitales?.get(mascotaVal.id)?.let { svReq ->
+                            val sv = cl.clinipets.veterinaria.domain.SignosVitales(
+                                mascota = mascotaVal,
+                                peso = svReq.peso,
+                                temperatura = svReq.temperatura,
+                                frecuenciaCardiaca = svReq.frecuenciaCardiaca
+                            )
+                            signosVitalesRepository.save(sv)
+                            logger.info("[CLINICO] Signos vitales registrados para mascota {}", mascotaVal.id)
+                        }
+                    }
                 }
-            }
-        }
 
-        // 2. Finalizar cita
-        cita.metodoPagoSaldo = metodoPago
-        cita.staffFinalizadorId = staff.userId
-        cita.estado = EstadoCita.FINALIZADA
-        
-        val saved = citaRepository.save(cita)
-        logger.info("AUDIT: Cita $id finalizada y stock descontado por staff ${staff.email}")
-        return saved
+                // 2. Solo si TODO el stock se consumió exitosamente → Finalizar
+                cita.metodoPagoSaldo = metodoPago
+                cita.staffFinalizadorId = staff.userId
+                cita.cambiarEstado(EstadoCita.FINALIZADA, staff.email)
+                
+                citaRepository.save(cita)
+            }
+            logger.info("AUDIT: Cita $id finalizada y stock descontado por staff ${staff.email}")
+            saved!!
+        } catch (ex: cl.clinipets.core.web.ConflictException) {
+            logger.error("[FINALIZAR] Error consumiendo stock: ${ex.message}")
+
+            // Rollback happened automatically for the transactionTemplate block.
+            // Stock is restored.
+            // We now mark as CANCELADA in a fresh transaction.
+
+            cita.cambiarEstado(EstadoCita.CANCELADA, staff.email)
+            citaRepository.save(cita)
+
+            logger.warn("AUDIT: Cita $id marcada como CANCELADA por falta de stock al finalizar. Staff: ${staff.email}")
+
+            throw BadRequestException(
+                "No se pudo finalizar la cita: ${ex.message}. " +
+                "El stock fue insuficiente al momento de la atención. La cita ha sido cancelada."
+            )
+        }
     }
 
     @Transactional
@@ -351,7 +397,7 @@ class ReservaService(
         reponerStock(cita)
 
         // 3. Cambiar estado
-        cita.estado = EstadoCita.CANCELADA
+        cita.cambiarEstado(EstadoCita.CANCELADA, staff.email)
 
         // 4. Guardar y retornar
         val saved = citaRepository.save(cita)
@@ -370,5 +416,25 @@ class ReservaService(
         val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(startOfDay, endOfDay)
 
         return citas.map { it.toDetalladaResponse() }
+    }
+
+    @Transactional(readOnly = true)
+    fun buscarCitas(
+        estado: EstadoCita?,
+        fechaDesde: LocalDate?,
+        fechaHasta: LocalDate?
+    ): List<CitaDetalladaResponse> {
+        val inicio = fechaDesde?.atStartOfDay(clinicZoneId)?.toInstant() ?: Instant.EPOCH
+        val fin = fechaHasta?.plusDays(1)?.atStartOfDay(clinicZoneId)?.toInstant() ?: Instant.now().plus(365, ChronoUnit.DAYS)
+
+        val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(inicio, fin)
+
+        val filtradas = if (estado != null) {
+            citas.filter { it.estado == estado }
+        } else {
+            citas
+        }
+
+        return filtradas.map { it.toDetalladaResponse() }
     }
 }
