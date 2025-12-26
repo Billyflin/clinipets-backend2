@@ -4,12 +4,13 @@ import cl.clinipets.agendamiento.domain.Cita
 import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.BloqueoAgenda
 import cl.clinipets.agendamiento.domain.BloqueoAgendaRepository
-import cl.clinipets.agendamiento.domain.HorarioClinica
+import cl.clinipets.core.config.ClinicProperties
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
 import java.time.LocalDate
+import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
@@ -17,16 +18,18 @@ import java.time.temporal.ChronoUnit
 class DisponibilidadService(
     private val citaRepository: CitaRepository,
     private val bloqueoAgendaRepository: BloqueoAgendaRepository,
+    private val clinicProperties: ClinicProperties,
     private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(DisponibilidadService::class.java)
     private val intervaloMinutos = 15L
+    private val bufferMinutosMismoDia = 60L
 
     @Transactional(readOnly = true)
     fun obtenerSlots(fecha: LocalDate, duracionMinutos: Int): List<Instant> {
         logger.info(">>> Calculando disponibilidad. Fecha: $fecha, Duración: $duracionMinutos min, Zona: $clinicZoneId")
 
-        val ventana = HorarioClinica.ventanaPara(fecha.dayOfWeek)
+        val ventana = obtenerVentanaPara(fecha)
 
         if (ventana == null) {
             logger.warn(">>> La clínica está CERRADA los ${fecha.dayOfWeek}")
@@ -36,42 +39,49 @@ class DisponibilidadService(
         val (abre, cierra) = ventana
         logger.info(">>> Horario del día: $abre a $cierra")
 
-        // Calculamos rango del día completo para buscar citas existentes
         val startOfDay = fecha.atStartOfDay(clinicZoneId).toInstant()
         val endOfDay = fecha.plusDays(1).atStartOfDay(clinicZoneId).toInstant()
-
-        logger.debug(">>> Buscando citas en DB entre $startOfDay y $endOfDay")
+        val ahora = Instant.now()
+        val limiteMinimo = if (fecha == LocalDate.now(clinicZoneId)) {
+            ahora.plus(bufferMinutosMismoDia, ChronoUnit.MINUTES)
+        } else {
+            startOfDay
+        }
 
         val citasDia = citaRepository.findOverlappingCitas(startOfDay, endOfDay)
-        logger.info(">>> Citas encontradas en conflicto: ${citasDia.size}")
-
         val bloqueosDia = bloqueoAgendaRepository.findByFechaHoraFinGreaterThanAndFechaHoraInicioLessThan(startOfDay, endOfDay)
-        logger.info(">>> Bloqueos encontrados en conflicto: ${bloqueosDia.size}")
 
         val slots = mutableListOf<Instant>()
-
-        // Construir el cursor inicial: fecha + hora de apertura
         var cursor = fecha.atTime(abre).atZone(clinicZoneId).toInstant()
         val limiteCierre = fecha.atTime(cierra).atZone(clinicZoneId).toInstant()
 
-        logger.info(">>> Generando slots desde $cursor hasta $limiteCierre")
-
         while (cursor.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES) <= limiteCierre) {
-            val inicio = cursor
-            val fin = inicio.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES)
+            if (cursor >= limiteMinimo) {
+                val inicio = cursor
+                val fin = inicio.plus(duracionMinutos.toLong(), ChronoUnit.MINUTES)
 
-            if (estaLibre(inicio, fin, citasDia, bloqueosDia)) {
-                slots.add(cursor)
-                // Logueamos solo algunos para no saturar, o todos si estás depurando fuerte
-                logger.debug("   -> Slot Disponible: $cursor ($inicio - $fin)")
-            } else {
-                logger.debug("   -> Slot OCUPADO: $cursor")
+                if (estaLibre(inicio, fin, citasDia, bloqueosDia)) {
+                    slots.add(cursor)
+                }
             }
             cursor = cursor.plus(intervaloMinutos, ChronoUnit.MINUTES)
         }
 
-        logger.info(">>> Total slots disponibles calculados: ${slots.size}")
         return slots
+    }
+
+    private fun obtenerVentanaPara(fecha: LocalDate): Pair<LocalTime, LocalTime>? {
+        val dayName = fecha.dayOfWeek.name
+        val scheduleStr = clinicProperties.schedule[dayName] 
+            ?: clinicProperties.schedule[dayName.lowercase()]
+            ?: return null
+        return try {
+            val parts = scheduleStr.split("-")
+            LocalTime.parse(parts[0]) to LocalTime.parse(parts[1])
+        } catch (e: Exception) {
+            logger.error("Error parseando horario para ${fecha.dayOfWeek}: $scheduleStr")
+            null
+        }
     }
 
     private fun estaLibre(inicio: Instant, fin: Instant, citas: List<Cita>, bloqueos: List<BloqueoAgenda>): Boolean {

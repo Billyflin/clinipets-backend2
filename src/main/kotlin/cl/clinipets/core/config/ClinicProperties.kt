@@ -12,5 +12,6 @@ data class ClinicProperties(
     var phone: String = "",
     var email: String = "",
     var website: String = "",
-    var logoPath: String = ""
+    var logoPath: String = "",
+    var schedule: Map<String, String> = mutableMapOf()
 )

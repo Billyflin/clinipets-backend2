@@ -62,6 +62,8 @@ class ReservaServiceTest(
     private lateinit var servicio: ServicioMedico
     private lateinit var mascota: Mascota
 
+    private val clinicZoneId = ZoneId.of("America/Santiago")
+
     @BeforeEach
     fun setup() {
         citaRepository.deleteAll()
@@ -140,7 +142,7 @@ class ReservaServiceTest(
         // Buscamos siguiente sabado
         val fechaSabado = siguienteSabadoAMas(LocalDate.now())
         // Convertimos a Instant a las 11:00 (HorarioClinica abre Sabado a las 10:00, cierra 19:00. 11:00 es válido)
-        val inicio = fechaSabado.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
+        val inicio = fechaSabado.atTime(11, 0).atZone(clinicZoneId).toInstant()
         
         val result = reservaService.crearReserva(
             detalles = listOf(
@@ -195,7 +197,7 @@ class ReservaServiceTest(
     fun `no permite reservar slot parcialmente ocupado`() {
         val fechaSabado = siguienteSabadoAMas(LocalDate.now())
         // 11:00
-        val inicio1 = fechaSabado.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
+        val inicio1 = fechaSabado.atTime(11, 0).atZone(clinicZoneId).toInstant()
         
         // Crear cita 1 (60 min)
         reservaService.crearReserva(
@@ -206,7 +208,7 @@ class ReservaServiceTest(
         )
         
         // Intentar crear cita 2 a las 11:30 (30 min dentro de la cita 1)
-        val inicio2 = fechaSabado.atTime(11, 30).atZone(ZoneId.systemDefault()).toInstant()
+        val inicio2 = fechaSabado.atTime(11, 30).atZone(clinicZoneId).toInstant()
         
         assertThrows(BadRequestException::class.java) {
             reservaService.crearReserva(
@@ -225,8 +227,8 @@ class ReservaServiceTest(
         servicioMedicoRepository.save(servicio)
         
         val fechaSabado = siguienteSabadoAMas(LocalDate.now())
-        val inicio1 = fechaSabado.atTime(11, 0).atZone(ZoneId.systemDefault()).toInstant()
-        val inicio2 = fechaSabado.atTime(12, 0).atZone(ZoneId.systemDefault()).toInstant()
+        val inicio1 = fechaSabado.atTime(11, 0).atZone(clinicZoneId).toInstant()
+        val inicio2 = fechaSabado.atTime(12, 0).atZone(clinicZoneId).toInstant()
 
         // Crear 2 citas
         val cita1Result = reservaService.crearReserva(

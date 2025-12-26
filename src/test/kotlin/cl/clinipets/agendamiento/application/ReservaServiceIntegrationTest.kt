@@ -10,11 +10,19 @@ import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.domain.Sexo
 import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.notifications.NotificationService
+import org.awaitility.kotlin.await
+import org.awaitility.kotlin.untilAsserted
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.verify
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import java.math.BigDecimal
+import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.util.*
@@ -35,6 +43,9 @@ class ReservaServiceIntegrationTest : AbstractIntegrationTest() {
 
     @Autowired
     private lateinit var servicioMedicoRepository: cl.clinipets.servicios.domain.ServicioMedicoRepository
+
+    @MockitoSpyBean
+    private lateinit var notificationService: NotificationService
 
     @Test
     fun `should finalize appointment and record payment`() {
@@ -115,5 +126,15 @@ class ReservaServiceIntegrationTest : AbstractIntegrationTest() {
         assertEquals(BigDecimal("15000.00"), finalized.totalPagado().setScale(2))
         assertEquals(BigDecimal.ZERO.setScale(2), finalized.saldoPendiente().setScale(2))
         assertEquals(staff.id, finalized.staffFinalizador?.id)
+
+        // 4. Verify Async Notification
+        await untilAsserted {
+            verify(notificationService, atLeastOnce()).enviarNotificacion(
+                userId = any(),
+                titulo = any(),
+                cuerpo = any(),
+                data = any()
+            )
+        }
     }
 }
