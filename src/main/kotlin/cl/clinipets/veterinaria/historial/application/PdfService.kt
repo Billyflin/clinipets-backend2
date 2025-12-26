@@ -628,7 +628,7 @@ class PdfService(
         val foto = mascotaMediaRepository.findAllByMascotaIdOrderByFechaSubidaDesc(mascotaId)
             .firstOrNull { it.tipo == MediaType.IMAGE } ?: run {
                 logger.info("[PDF] Mascota {} sin foto asociada para la ficha", mascotaId)
-                return@run
+                return
             }
 
         val image = try {
@@ -637,7 +637,7 @@ class PdfService(
             Image.getInstance(imageBytes)
         } catch (ex: Exception) {
             logger.warn("[PDF] No se pudo cargar la foto {}: {}", foto.id ?: "sin-id", ex.message)
-            return@run
+            return
         }
 
         // Ajuste de tamaño para que no rompa la página

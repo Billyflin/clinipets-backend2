@@ -29,8 +29,8 @@ class RecordatorioSaludScheduler(
         val fichas = fichaRepository.findAll() // En producción optimizar con Query específica
 
         // 1. Vacunas
-        fichas.filter { it.fechaProximaVacuna != null }.forEach { ficha ->
-            val fecha = ficha.fechaProximaVacuna!!
+        fichas.filter { it.planSanitario.fechaProximaVacuna != null }.forEach { ficha ->
+            val fecha = ficha.planSanitario.fechaProximaVacuna!!
             val mascota = ficha.mascota
             
             if (fecha == manana) {
@@ -41,8 +41,8 @@ class RecordatorioSaludScheduler(
         }
 
         // 2. Controles
-        fichas.filter { it.fechaProximoControl != null }.forEach { ficha ->
-            val fecha = ficha.fechaProximoControl!!
+        fichas.filter { it.planSanitario.fechaProximoControl != null }.forEach { ficha ->
+            val fecha = ficha.planSanitario.fechaProximoControl!!
             val mascota = ficha.mascota
 
             if (fecha == manana) {

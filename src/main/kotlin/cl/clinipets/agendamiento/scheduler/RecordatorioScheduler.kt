@@ -46,7 +46,7 @@ class RecordatorioScheduler(
                 .format(dateFormatter)
 
             notificationService.enviarNotificacion(
-                userId = cita.tutorId,
+                userId = cita.tutor.id!!,
                 titulo = "⏰ Recordatorio de cita",
                 cuerpo = "Tu cita es mañana a las $fechaFormateada. ¡No faltes!",
                 data = mapOf(
@@ -82,7 +82,7 @@ class RecordatorioScheduler(
                 .format(dateFormatter)
 
             notificationService.enviarNotificacion(
-                userId = cita.tutorId,
+                userId = cita.tutor.id!!,
                 titulo = "🔔 Tu cita es pronto",
                 cuerpo = "Tu cita es en 1 hora ($fechaFormateada). Te esperamos!",
                 data = mapOf(
