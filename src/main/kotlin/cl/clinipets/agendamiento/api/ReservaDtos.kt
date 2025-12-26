@@ -10,6 +10,7 @@ import jakarta.validation.Valid
 import jakarta.validation.constraints.Future
 import jakarta.validation.constraints.NotEmpty
 import jakarta.validation.constraints.NotNull
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -76,7 +77,7 @@ data class DetalleCitaResponse(
     val mascotaId: UUID?,
     val nombreMascota: String?,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val precioUnitario: Int
+    val precioUnitario: BigDecimal
 )
 
 data class ResumenDiarioResponse(
@@ -85,13 +86,13 @@ data class ResumenDiarioResponse(
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val citasFinalizadas: Int,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val recaudacionTotalRealizada: Int,
+    val recaudacionTotalRealizada: BigDecimal,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val proyeccionPendiente: Int,
+    val proyeccionPendiente: BigDecimal,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val desgloseMetodosPago: Map<cl.clinipets.agendamiento.domain.MetodoPago, Int>,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val totalGeneral: Int
+    val totalGeneral: BigDecimal
 )
 
 data class CitaResponse(
@@ -104,9 +105,9 @@ data class CitaResponse(
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val estado: EstadoCita,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val precioFinal: Int,
+    val precioFinal: BigDecimal,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val saldoPendiente: Int,
+    val saldoPendiente: BigDecimal,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val detalles: List<DetalleCitaResponse>,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -129,9 +130,9 @@ data class CitaDetalladaResponse(
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val estado: EstadoCita,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val precioFinal: Int,
+    val precioFinal: BigDecimal,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val saldoPendiente: Int,
+    val saldoPendiente: BigDecimal,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val detalles: List<DetalleCitaResponse>,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
@@ -150,9 +151,9 @@ fun Cita.toResponse() = CitaResponse(
     fechaHoraFin = fechaHoraFin,
     estado = estado,
     precioFinal = precioFinal,
-    saldoPendiente = if (estado == EstadoCita.FINALIZADA) 0 else precioFinal,
+    saldoPendiente = if (estado == EstadoCita.FINALIZADA) BigDecimal.ZERO else precioFinal,
     detalles = detalles.map { it.toResponse() },
-    tutorId = tutorId,
+    tutorId = tutor.id!!,
     origen = origen,
     tipoAtencion = tipoAtencion,
     motivoConsulta = motivoConsulta,
@@ -166,11 +167,11 @@ fun Cita.toDetalladaResponse() = CitaDetalladaResponse(
     estado = estado,
     precioFinal = precioFinal,
     saldoPendiente = when (estado) {
-        EstadoCita.FINALIZADA, EstadoCita.CANCELADA -> 0
+        EstadoCita.FINALIZADA, EstadoCita.CANCELADA -> BigDecimal.ZERO
         else -> precioFinal
     },
     detalles = detalles.map { it.toResponse() },
-    tutorId = tutorId,
+    tutorId = tutor.id!!,
     origen = origen,
     tipoAtencion = tipoAtencion,
     motivoConsulta = motivoConsulta,

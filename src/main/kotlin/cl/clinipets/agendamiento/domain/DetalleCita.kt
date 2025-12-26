@@ -3,6 +3,7 @@ package cl.clinipets.agendamiento.domain
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.veterinaria.domain.Mascota
 import jakarta.persistence.*
+import java.math.BigDecimal
 import java.util.UUID
 
 @Entity
@@ -25,7 +26,7 @@ class DetalleCita(
     val mascota: Mascota?,
 
     @Column(nullable = false)
-    var precioUnitario: Int
+    var precioUnitario: BigDecimal
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

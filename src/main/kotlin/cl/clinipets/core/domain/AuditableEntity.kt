@@ -13,11 +13,14 @@ import java.time.Instant
 abstract class AuditableEntity {
     @CreatedDate
     @Column(nullable = false, updatable = false)
-    var createdAt: Instant = Instant.EPOCH
+    var createdAt: Instant = Instant.now()
         protected set
 
     @LastModifiedDate
     @Column(nullable = false)
-    var updatedAt: Instant = Instant.EPOCH
+    var updatedAt: Instant = Instant.now()
         protected set
+
+    @Column(nullable = false)
+    var deleted: Boolean = false
 }

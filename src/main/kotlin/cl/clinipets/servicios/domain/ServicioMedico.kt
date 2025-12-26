@@ -4,6 +4,7 @@ import cl.clinipets.core.domain.AuditableEntity
 import cl.clinipets.veterinaria.domain.Especie
 import cl.clinipets.veterinaria.domain.Mascota
 import jakarta.persistence.*
+import java.math.BigDecimal
 import java.util.UUID
 
 @Entity
@@ -16,14 +17,14 @@ class ServicioMedico(
     @Version
     var version: Long? = null,
 
-    @Column(nullable = false, unique = true)
+    @Column(nullable = false)
     var nombre: String,
 
     @Column(nullable = false)
-    var precioBase: Int,
+    var precioBase: BigDecimal,
 
     @Column(nullable = true)
-    var precioAbono: Int? = null,
+    var precioAbono: BigDecimal? = null,
 
     @Column(nullable = false)
     var requierePeso: Boolean,
@@ -63,7 +64,7 @@ class ServicioMedico(
     @org.hibernate.annotations.Fetch(org.hibernate.annotations.FetchMode.SUBSELECT)
     val insumos: MutableSet<ServicioInsumo> = mutableSetOf()
 ) : AuditableEntity() {
-    fun calcularPrecioPara(mascota: Mascota): Int {
+    fun calcularPrecioPara(mascota: Mascota): BigDecimal {
         if (!requierePeso) return precioBase
         val regla = reglas.firstOrNull {
             (mascota.pesoActual >= it.pesoMin) && (mascota.pesoActual <= it.pesoMax)

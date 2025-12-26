@@ -41,7 +41,7 @@ class DataCleanupScheduler(
         logger.warn("[CLEANUP] Marcando ${citasExpiradas.size} citas expiradas como NO_ASISTIO")
 
         citasExpiradas.forEach { cita ->
-            cita.estado = EstadoCita.NO_ASISTIO // ← Cambiar de CANCELADA a NO_ASISTIO
+            cita.cambiarEstado(EstadoCita.NO_ASISTIO, "Sistema Automático")
             citaRepository.save(cita)
             logger.info("[CLEANUP] Cita ${cita.id} marcada como NO_ASISTIO automáticamente")
         }

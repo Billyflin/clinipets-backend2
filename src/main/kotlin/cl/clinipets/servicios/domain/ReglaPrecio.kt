@@ -18,7 +18,7 @@ class ReglaPrecio(
     val pesoMax: Double,
 
     @Column(nullable = false)
-    val precio: Int,
+    val precio: BigDecimal,
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "servicio_id", nullable = false)

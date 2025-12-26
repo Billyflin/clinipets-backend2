@@ -19,7 +19,7 @@ import java.util.UUID
 data class SignosVitalesRequest(
     val peso: Double,
     val temperatura: Double,
-    val frecuenciaCardiaca: String
+    val frecuenciaCardiaca: Int
 )
 
 data class FinalizarCitaRequest(

@@ -1,22 +1,26 @@
 package cl.clinipets.core.notifications
 
+import cl.clinipets.identity.domain.DeviceTokenRepository
 import cl.clinipets.identity.domain.UserRepository
 import com.google.firebase.messaging.FirebaseMessaging
 import com.google.firebase.messaging.Message
 import com.google.firebase.messaging.Notification
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
+import org.springframework.transaction.annotation.Transactional
 import java.util.UUID
 
 @Service
 class NotificationService(
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val deviceTokenRepository: DeviceTokenRepository
 ) {
     private val logger = LoggerFactory.getLogger(NotificationService::class.java)
 
     /**
-     * Envía notificación push a un usuario específico
+     * Envía notificación push a todos los dispositivos de un usuario
      */
+    @Transactional(readOnly = true)
     fun enviarNotificacion(
         userId: UUID,
         titulo: String,
@@ -29,26 +33,36 @@ class NotificationService(
                 return
             }
 
-            if (user.fcmToken.isNullOrBlank()) {
-                logger.debug("[PUSH] Usuario ${user.email} sin token FCM")
+            val tokens = deviceTokenRepository.findAllByUserId(userId)
+            if (tokens.isEmpty()) {
+                logger.debug("[PUSH] Usuario ${user.email} sin dispositivos registrados")
                 return
             }
 
-            val message = Message.builder()
-                .setToken(user.fcmToken)
-                .setNotification(
-                    Notification.builder()
-                        .setTitle(titulo)
-                        .setBody(cuerpo)
-                        .build()
-                )
-                .putAllData(data)
-                .build()
+            logger.info("[PUSH] Enviando a ${user.email} (${tokens.size} dispositivos)")
 
-            val response = FirebaseMessaging.getInstance().send(message)
-            logger.info("[PUSH] Enviada a ${user.email}: $response")
+            tokens.forEach { device ->
+                try {
+                    val message = Message.builder()
+                        .setToken(device.token)
+                        .setNotification(
+                            Notification.builder()
+                                .setTitle(titulo)
+                                .setBody(cuerpo)
+                                .build()
+                        )
+                        .putAllData(data)
+                        .build()
+
+                    val response = FirebaseMessaging.getInstance().send(message)
+                    logger.debug("[PUSH] Enviado OK a token parcial ${device.token.take(8)}...")
+                } catch (ex: Exception) {
+                    logger.error("[PUSH] Error enviando a un dispositivo de $userId: ${ex.message}")
+                    // Opcional: Si el error es "invalid token", eliminarlo de la DB
+                }
+            }
         } catch (ex: Exception) {
-            logger.error("[PUSH] Error enviando notificación a $userId", ex)
+            logger.error("[PUSH] Error general enviando notificación a $userId", ex)
         }
     }
 

@@ -172,8 +172,8 @@ class DataSeeder(
         if (existente == null) {
             val servicio = ServicioMedico(
                 nombre = nombre,
-                precioBase = 30000, // Precio base (0-10kg)
-                precioAbono = 10000,
+                precioBase = BigDecimal(30000), // Precio base (0-10kg)
+                precioAbono = BigDecimal(10000),
                 requierePeso = true,
                 duracionMinutos = 90,
                 activo = true,
@@ -187,43 +187,43 @@ class DataSeeder(
                         servicio = servicio,
                         pesoMin = 0.0,
                         pesoMax = 10.0,
-                        precio = 30000
+                        precio = BigDecimal(30000)
                     ),
                     ReglaPrecio(
                         servicio = servicio,
                         pesoMin = 10.1,
                         pesoMax = 15.0,
-                        precio = 34000
+                        precio = BigDecimal(34000)
                     ),
                     ReglaPrecio(
                         servicio = servicio,
                         pesoMin = 15.1,
                         pesoMax = 20.0,
-                        precio = 38000
+                        precio = BigDecimal(38000)
                     ),
                     ReglaPrecio(
                         servicio = servicio,
                         pesoMin = 20.1,
                         pesoMax = 25.0,
-                        precio = 42000
+                        precio = BigDecimal(42000)
                     ),
                     ReglaPrecio(
                         servicio = servicio,
                         pesoMin = 25.1,
                         pesoMax = 30.0,
-                        precio = 46000
+                        precio = BigDecimal(46000)
                     ),
                     ReglaPrecio(
                         servicio = servicio,
                         pesoMin = 30.1,
                         pesoMax = 35.0,
-                        precio = 50000
+                        precio = BigDecimal(50000)
                     ),
                     ReglaPrecio(
                         servicio = servicio,
                         pesoMin = 35.1,
                         pesoMax = 40.0,
-                        precio = 54000
+                        precio = BigDecimal(54000)
                     )
                 )
             )
@@ -232,38 +232,52 @@ class DataSeeder(
     }
 
     private fun seedPromociones() {
-        val nombrePromo = "Pack Cirugía + Microchip"
+        if (promocionRepository.count() == 0L) {
+            val consulta = servicioMedicoRepository.findAll().find { it.nombre.contains("Consulta") }!!
+            val vacuna = servicioMedicoRepository.findAll().find { it.nombre.contains("Vacuna") }!!
 
-        // Verificar si ya existe para no duplicar
-        val promos = promocionRepository.findAll()
-        if (promos.any { it.nombre.equals(nombrePromo, ignoreCase = true) }) return
+            // Promo 1: Pack Cachorro (Consulta + Vacuna) -> $5.000 dcto en Consulta
+            val promoCachorro = Promocion(
+                nombre = "Pack Cachorro",
+                descripcion = "Descuento al llevar Consulta y Vacuna juntas",
+                fechaInicio = LocalDate.now(),
+                fechaFin = LocalDate.now().plusYears(1),
+                activa = true,
+                serviciosTrigger = mutableSetOf(consulta, vacuna)
+            )
+            promoCachorro.beneficios.add(
+                PromocionBeneficio(
+                    servicio = consulta,
+                    tipo = TipoDescuento.MONTO_OFF,
+                    valor = BigDecimal(5000)
+                )
+            )
+            promocionRepository.save(promoCachorro)
 
-        // Buscar servicios
-        val servicios = servicioMedicoRepository.findAll()
-        val cirugia = servicios.find { it.nombre.contains("Esterilización Canina", ignoreCase = true) }
-        val chip = servicios.find { it.nombre.contains("Microchip", ignoreCase = true) }
+            // Promo 2: Fin de Semana Quirúrgico (Si incluye Cirugía y Chip -> Descuento en ambos)
+            val cirugia = servicioMedicoRepository.findAll().find { it.nombre.contains("Esterilización") } ?: return
+            val chip = servicioMedicoRepository.findAll().find { it.nombre.contains("Chip") } ?: return
 
-        if (cirugia != null && chip != null) {
             val promocion = Promocion(
-                nombre = nombrePromo,
-                descripcion = "Descuento al agendar esterilización canina junto con implantación de microchip fines de semana.",
+                nombre = "Fin de Semana Quirúrgico",
+                descripcion = "20% off en cirugías los fines de semana",
                 fechaInicio = LocalDate.now(),
                 fechaFin = LocalDate.now().plusYears(1),
                 diasPermitidos = "SAT,SUN",
                 activa = true,
-                serviciosTriggerIds = mutableSetOf(cirugia.id!!, chip.id!!)
+                serviciosTrigger = mutableSetOf(cirugia, chip)
             )
 
             promocion.beneficios.add(
                 PromocionBeneficio(
-                    servicioId = cirugia.id!!,
+                    servicio = cirugia,
                     tipo = TipoDescuento.MONTO_OFF,
                     valor = BigDecimal(2000)
                 )
             )
             promocion.beneficios.add(
                 PromocionBeneficio(
-                    servicioId = chip.id!!,
+                    servicio = chip,
                     tipo = TipoDescuento.MONTO_OFF,
                     valor = BigDecimal(2000)
                 )
@@ -288,8 +302,8 @@ class DataSeeder(
         if (existente != null) {
             existente.duracionMinutos = duracion
             existente.categoria = categoria
-            existente.precioBase = precioBase
-            existente.precioAbono = precioAbono
+            existente.precioBase = BigDecimal(precioBase)
+            existente.precioAbono = BigDecimal(precioAbono)
             if (especies.isNotEmpty()) {
                 existente.especiesPermitidas = especies
             }
@@ -297,8 +311,8 @@ class DataSeeder(
         } else {
             val servicio = ServicioMedico(
                 nombre = nombre,
-                precioBase = precioBase,
-                precioAbono = precioAbono,
+                precioBase = BigDecimal(precioBase),
+                precioAbono = BigDecimal(precioAbono),
                 requierePeso = requierePeso,
                 duracionMinutos = duracion,
                 activo = true,
@@ -312,7 +326,7 @@ class DataSeeder(
                     ReglaPrecio(
                         pesoMin = 0.0,
                         pesoMax = 100.0,
-                        precio = precioBase,
+                        precio = BigDecimal(precioBase),
                         servicio = servicio
                     )
                 )

@@ -32,13 +32,13 @@ import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.awt.Color
 import java.io.ByteArrayOutputStream
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.util.Locale
 import java.util.UUID
-import kotlin.math.max
 
 @Service
 class PdfService(
@@ -67,9 +67,9 @@ class PdfService(
 
     data class FinancialSummary(
         val servicioNombre: String,
-        val servicioPrecio: Int,
-        val insumosExtras: Int,
-        val totalPagado: Int,
+        val servicioPrecio: BigDecimal,
+        val insumosExtras: BigDecimal,
+        val totalPagado: BigDecimal,
         val estadoCita: EstadoCita?
     )
 
@@ -87,7 +87,7 @@ class PdfService(
             throw UnauthorizedException("No tiene permiso para ver esta ficha.")
         }
 
-        val authorName = userRepository.findById(ficha.autorId).map { it.name }.orElse("Veterinario Tratante")
+        val authorName = ficha.autor.name
 
         // Buscar datos financieros relacionados
         val citaRelacionada = mascota.id?.let { buscarCitaRelacionada(it, ficha.fechaAtencion) }
@@ -110,7 +110,7 @@ class PdfService(
             tutor.phone,
             tutor.email,
             tutor.address,
-            ficha.pesoRegistrado ?: mascota.pesoActual.toDouble()
+            ficha.signosVitales.pesoRegistrado ?: mascota.pesoActual.toDouble()
         )
 
         // Signos Vitales Estructurados
@@ -125,8 +125,8 @@ class PdfService(
         ficha.observaciones?.let { addClinicalSection(document, "Observaciones adicionales", it) }
 
         // Plan de Vacunación Destacado
-        if (ficha.esVacuna) {
-            addVaccineSection(document, ficha.nombreVacuna, ficha.fechaProximaVacuna)
+        if (ficha.planSanitario.esVacuna) {
+            addVaccineSection(document, ficha.planSanitario.nombreVacuna, ficha.planSanitario.fechaProximaVacuna)
         }
 
         // Secciones Finales
@@ -533,12 +533,12 @@ class PdfService(
             })
         }
 
-        val tempColor = if (ficha.alertaVeterinaria) Color(255, 235, 235) else Color(245, 249, 252)
+        val tempColor = if (ficha.signosVitales.alertaVeterinaria) Color(255, 235, 235) else Color(245, 249, 252)
 
-        addCell("Temperatura", ficha.temperatura?.let { "$it°C" }, tempColor)
-        addCell("Frec. Cardíaca", ficha.frecuenciaCardiaca?.let { "$it lpm" })
-        addCell("Frec. Resp.", ficha.frecuenciaRespiratoria?.let { "$it rpm" })
-        addCell("Peso", ficha.pesoRegistrado?.let { "$it kg" })
+        addCell("Temperatura", ficha.signosVitales.temperatura?.let { "$it°C" }, tempColor)
+        addCell("Frec. Cardíaca", ficha.signosVitales.frecuenciaCardiaca?.let { "$it lpm" })
+        addCell("Frec. Resp.", ficha.signosVitales.frecuenciaRespiratoria?.let { "$it rpm" })
+        addCell("Peso", ficha.signosVitales.pesoRegistrado?.let { "$it kg" })
 
         document.add(table)
     }
@@ -578,7 +578,7 @@ class PdfService(
             setSpacingAfter(8f)
         }
 
-        fun addRow(label: String, amount: Int, highlight: Boolean = false) {
+        fun addRow(label: String, amount: BigDecimal, highlight: Boolean = false) {
             val labelCell = PdfPCell(Phrase(label, if (highlight) boldFont else baseFont)).apply {
                 border = Rectangle.NO_BORDER
                 setPadding(6f)
@@ -628,7 +628,7 @@ class PdfService(
         val foto = mascotaMediaRepository.findAllByMascotaIdOrderByFechaSubidaDesc(mascotaId)
             .firstOrNull { it.tipo == MediaType.IMAGE } ?: run {
                 logger.info("[PDF] Mascota {} sin foto asociada para la ficha", mascotaId)
-                return
+                return@run
             }
 
         val image = try {
@@ -637,7 +637,7 @@ class PdfService(
             Image.getInstance(imageBytes)
         } catch (ex: Exception) {
             logger.warn("[PDF] No se pudo cargar la foto {}: {}", foto.id ?: "sin-id", ex.message)
-            return
+            return@run
         }
 
         // Ajuste de tamaño para que no rompa la página
@@ -665,9 +665,9 @@ class PdfService(
         if (cita == null) {
             return FinancialSummary(
                 servicioNombre = fallbackLabel,
-                servicioPrecio = 0,
-                insumosExtras = 0,
-                totalPagado = 0,
+                servicioPrecio = BigDecimal.ZERO,
+                insumosExtras = BigDecimal.ZERO,
+                totalPagado = BigDecimal.ZERO,
                 estadoCita = null
             )
         }
@@ -681,13 +681,13 @@ class PdfService(
         val subtotalServicios = if (cita.detalles.isEmpty()) {
             cita.precioFinal
         } else {
-            cita.detalles.sumOf { it.precioUnitario }
+            cita.detalles.fold(BigDecimal.ZERO) { acc, d -> acc.add(d.precioUnitario) }
         }
 
-        val extras = max(cita.precioFinal - subtotalServicios, 0)
+        val extras = cita.precioFinal.subtract(subtotalServicios).max(BigDecimal.ZERO)
 
         // Si está finalizada, se pagó todo. Si no (Confirmada), no se ha pagado nada.
-        val pagado = if (cita.estado == EstadoCita.FINALIZADA) cita.precioFinal else 0
+        val pagado = if (cita.estado == EstadoCita.FINALIZADA) cita.precioFinal else BigDecimal.ZERO
 
         return FinancialSummary(
             servicioNombre = serviciosLabel,
@@ -698,7 +698,7 @@ class PdfService(
         )
     }
 
-    private fun formatCurrency(amount: Int): String {
+    private fun formatCurrency(amount: BigDecimal): String {
         val formatter = java.text.NumberFormat.getInstance(Locale.of("es", "CL")).apply {
             minimumFractionDigits = 0
             maximumFractionDigits = 0

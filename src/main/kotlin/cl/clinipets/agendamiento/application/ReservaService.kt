@@ -9,6 +9,7 @@ import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.BadRequestException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.core.web.UnauthorizedException
+import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.servicios.application.InventarioService
 import cl.clinipets.servicios.domain.CategoriaServicio
@@ -19,6 +20,7 @@ import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.transaction.support.TransactionTemplate
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -37,6 +39,7 @@ class ReservaService(
     private val pricingCalculator: PricingCalculator,
     private val clinicalValidator: ClinicalValidator,
     private val signosVitalesRepository: cl.clinipets.veterinaria.domain.SignosVitalesRepository,
+    private val userRepository: UserRepository,
     private val clinicZoneId: ZoneId,
     private val eventPublisher: ApplicationEventPublisher,
     private val transactionTemplate: TransactionTemplate
@@ -46,7 +49,7 @@ class ReservaService(
     private data class TempDetalle(
         val servicio: cl.clinipets.servicios.domain.ServicioMedico,
         val mascota: cl.clinipets.veterinaria.domain.Mascota?,
-        val precio: Int
+        val precio: BigDecimal
     )
 
     @Transactional(readOnly = true)
@@ -66,12 +69,12 @@ class ReservaService(
         // 1. Recaudación Realizada (Solo finalizadas)
         val recaudacionTotalRealizada = citasValidas
             .filter { it.estado == EstadoCita.FINALIZADA }
-            .sumOf { it.precioFinal }
+            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.precioFinal) }
 
         // 2. Proyección Pendiente (Confirmadas pero no finalizadas)
         val proyeccionPendiente = citasValidas
             .filter { it.estado == EstadoCita.CONFIRMADA }
-            .sumOf { it.precioFinal }
+            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.precioFinal) }
 
         // 3. Desglose de Métodos de Pago (Solo finalizadas)
         val desgloseMetodosPago = citasValidas
@@ -126,6 +129,9 @@ class ReservaService(
             throw NotFoundException("Mascotas no encontradas: $missing")
         }
 
+        val tutorUser = userRepository.findById(tutor.userId)
+            .orElseThrow { NotFoundException("Usuario tutor no encontrado") }
+
         // === VALIDAR STOCK ANTES DE PROCEDER ===
         logger.info("[RESERVA] Validando disponibilidad de stock...")
         detalles.forEach { item ->
@@ -138,7 +144,7 @@ class ReservaService(
         logger.info("[RESERVA] Stock validado correctamente")
 
         val fechaCita = fechaHoraInicio.atZone(clinicZoneId).toLocalDate()
-        var totalPrecio = 0
+        var totalPrecio = BigDecimal.ZERO
         var duracionTotalMinutos = 0L
         val tempList = mutableListOf<TempDetalle>()
 
@@ -153,8 +159,8 @@ class ReservaService(
 
             val precioCalculado = pricingCalculator.calcularPrecioFinal(servicio, mascota, fechaCita)
 
-            val precioItem = precioCalculado.precioFinal * item.cantidad
-            totalPrecio += precioItem
+            val precioItem = precioCalculado.precioFinal.multiply(BigDecimal(item.cantidad))
+            totalPrecio = totalPrecio.add(precioItem)
             duracionTotalMinutos += (servicio.duracionMinutos * item.cantidad)
 
             repeat(item.cantidad) {
@@ -198,7 +204,7 @@ class ReservaService(
             fechaHoraFin = fechaHoraFin,
             estado = EstadoCita.CONFIRMADA,
             precioFinal = totalPrecio,
-            tutorId = tutor.userId,
+            tutor = tutorUser,
             origen = origen,
             tipoAtencion = tipoAtencion,
             motivoConsulta = motivoConsulta,
@@ -226,7 +232,7 @@ class ReservaService(
     fun confirmar(id: UUID, tutor: JwtPayload): Cita {
         logger.info("[CONFIRMAR_RESERVA] Request para CitaID: {}", id)
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
-        if (cita.tutorId != tutor.userId) {
+        if (cita.tutor.id != tutor.userId) {
             logger.warn("[CONFIRMAR_RESERVA] Usuario {} intentó confirmar cita ajena {}", tutor.email, id)
             throw UnauthorizedException("No puedes confirmar esta cita")
         }
@@ -242,7 +248,7 @@ class ReservaService(
     fun cancelar(id: UUID, tutor: JwtPayload): Cita {
         logger.info("[CANCELAR_RESERVA] Request para CitaID: {}", id)
         val cita = citaRepository.findById(id).orElseThrow { NotFoundException("Cita no encontrada") }
-        if (cita.tutorId != tutor.userId) {
+        if (cita.tutor.id != tutor.userId) {
             logger.warn("[CANCELAR_RESERVA] Usuario {} intentó cancelar cita ajena {}", tutor.email, id)
             throw UnauthorizedException("No puedes cancelar esta cita")
         }
@@ -284,7 +290,7 @@ class ReservaService(
 
         // Security check: Allow if user is Staff/Admin OR if user is the tutor (owner)
         if (solicitante.role != UserRole.STAFF && solicitante.role != UserRole.ADMIN) {
-            if (cita.tutorId != solicitante.userId) {
+            if (cita.tutor.id != solicitante.userId) {
                 logger.warn("[OBTENER_RESERVA] Acceso denegado. User: {} intentó acceder a Cita: {}", solicitante.email, id)
                 throw UnauthorizedException("No tienes permiso para ver esta reserva")
             }
@@ -354,9 +360,12 @@ class ReservaService(
                     }
                 }
 
+                val staffUser = userRepository.findById(staff.userId)
+                    .orElseThrow { NotFoundException("Staff no encontrado") }
+
                 // 2. Solo si TODO el stock se consumió exitosamente → Finalizar
                 cita.metodoPagoSaldo = metodoPago
-                cita.staffFinalizadorId = staff.userId
+                cita.staffFinalizador = staffUser
                 cita.cambiarEstado(EstadoCita.FINALIZADA, staff.email)
                 
                 citaRepository.save(cita)

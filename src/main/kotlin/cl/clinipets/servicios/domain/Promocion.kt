@@ -16,8 +16,9 @@ enum class TipoDescuento {
 
 @Embeddable
 data class PromocionBeneficio(
-    @Column(nullable = false)
-    val servicioId: UUID,
+    @ManyToOne(fetch = FetchType.EAGER)
+    @JoinColumn(name = "servicio_id", nullable = false)
+    val servicio: ServicioMedico,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
@@ -52,10 +53,13 @@ data class Promocion(
     @Column(nullable = false)
     val activa: Boolean = true,
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "promocion_triggers", joinColumns = [JoinColumn(name = "promocion_id")])
-    @Column(name = "servicio_id")
-    val serviciosTriggerIds: MutableSet<UUID> = mutableSetOf(),
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+        name = "promocion_triggers",
+        joinColumns = [JoinColumn(name = "promocion_id")],
+        inverseJoinColumns = [JoinColumn(name = "servicio_id")]
+    )
+    val serviciosTrigger: MutableSet<ServicioMedico> = mutableSetOf(),
 
     @ElementCollection(fetch = FetchType.EAGER)
     @CollectionTable(name = "promocion_beneficios", joinColumns = [JoinColumn(name = "promocion_id")])

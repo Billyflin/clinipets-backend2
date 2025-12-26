@@ -185,7 +185,7 @@ class ClinipetsIntegrityTests {
 
         val request = FinalizarCitaRequest(
             metodoPago = MetodoPago.EFECTIVO,
-            signosVitales = mapOf(testMascotaId to SignosVitalesRequest(10.0, 38.5, "80bpm"))
+            signosVitales = mapOf(testMascotaId to SignosVitalesRequest(10.0, 38.5, 80))
         )
 
         mockMvc.perform(

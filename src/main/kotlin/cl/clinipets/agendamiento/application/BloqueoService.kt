@@ -13,6 +13,7 @@ import java.util.UUID
 @Service
 class BloqueoService(
     private val bloqueoAgendaRepository: BloqueoAgendaRepository,
+    private val userRepository: cl.clinipets.identity.domain.UserRepository,
     private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(BloqueoService::class.java)
@@ -20,8 +21,11 @@ class BloqueoService(
     @Transactional
     fun crearBloqueo(vetId: UUID, inicio: Instant, fin: Instant, motivo: String?): BloqueoAgenda {
         logger.debug("[BLOQUEO_SERVICE] Creando bloqueo. VetID: {}, Inicio: {}, Fin: {}", vetId, inicio, fin)
+        val veterinario = userRepository.findById(vetId)
+            .orElseThrow { cl.clinipets.core.web.NotFoundException("Veterinario no encontrado") }
+            
         val bloqueo = BloqueoAgenda(
-            veterinarioId = vetId,
+            veterinario = veterinario,
             fechaHoraInicio = inicio,
             fechaHoraFin = fin,
             motivo = motivo

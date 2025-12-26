@@ -12,7 +12,7 @@ data class ReglaPrecioDto(
     val id: UUID,
     val pesoMin: Double,
     val pesoMax: Double,
-    val precio: Int
+    val precio: BigDecimal
 )
 
 data class InsumoDto(
@@ -27,15 +27,15 @@ data class InsumoDetalladoDto(
     val id: UUID,
     val nombre: String,
     val stockActual: Double,
-    val stockMinimo: Int,
+    val stockMinimo: Double,
     val unidadMedida: String
 )
 
 data class ServicioMedicoDto(
     val id: UUID,
     val nombre: String,
-    val precioBase: Int,
-    val precioAbono: Int?,
+    val precioBase: BigDecimal,
+    val precioAbono: BigDecimal?,
     val requierePeso: Boolean,
     val duracionMinutos: Int,
     val activo: Boolean,

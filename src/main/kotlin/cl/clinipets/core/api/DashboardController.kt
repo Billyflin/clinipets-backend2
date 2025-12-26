@@ -13,6 +13,7 @@ import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.GetMapping
 import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RestController
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -24,7 +25,7 @@ data class EstadisticasResponse(
     val citasHoy: Int,
     val citasSemana: Int,
     val citasMes: Int,
-    val ingresosMes: Int,
+    val ingresosMes: BigDecimal,
     val topServicios: List<ServicioPopular>
 )
 
@@ -75,7 +76,7 @@ class DashboardController(
 
         val ingresosMes = citasMes
             .filter { it.estado == EstadoCita.FINALIZADA }
-            .sumOf { it.precioFinal }
+            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.precioFinal) }
 
         // Top servicios del mes
         val topServicios = citasMes

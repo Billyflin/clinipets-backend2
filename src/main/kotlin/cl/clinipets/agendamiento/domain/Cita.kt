@@ -1,7 +1,11 @@
 package cl.clinipets.agendamiento.domain
 
 import cl.clinipets.core.domain.AuditableEntity
+import cl.clinipets.identity.domain.User
 import jakarta.persistence.*
+import org.hibernate.annotations.SQLDelete
+import org.hibernate.annotations.SQLRestriction
+import java.math.BigDecimal
 import java.time.Instant
 import java.util.UUID
 
@@ -13,7 +17,15 @@ enum class MetodoPago {
 }
 
 @Entity
-@Table(name = "citas")
+@Table(
+    name = "citas",
+    indexes = [
+        Index(name = "idx_cita_tutor", columnList = "tutor_id"),
+        Index(name = "idx_cita_fecha_estado", columnList = "fechaHoraInicio, estado")
+    ]
+)
+@SQLDelete(sql = "UPDATE citas SET deleted = true WHERE id = ?")
+@SQLRestriction("deleted = false")
 class Cita(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -30,13 +42,14 @@ class Cita(
     var estado: EstadoCita,
 
     @Column(nullable = false)
-    var precioFinal: Int,
+    var precioFinal: BigDecimal,
 
     @OneToMany(mappedBy = "cita", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     val detalles: MutableList<DetalleCita> = mutableListOf(),
 
-    @Column(nullable = false)
-    val tutorId: UUID,
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "tutor_id", nullable = false)
+    val tutor: User,
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -59,8 +72,9 @@ class Cita(
     @Column(length = 20)
     var metodoPagoSaldo: MetodoPago? = null,
 
-    @Column
-    var staffFinalizadorId: UUID? = null
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "staff_finalizador_id")
+    var staffFinalizador: User? = null
 ) : AuditableEntity() {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

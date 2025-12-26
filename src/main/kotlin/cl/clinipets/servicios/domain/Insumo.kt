@@ -21,7 +21,7 @@ class Insumo(
     var stockActual: Double,
 
     @Column(nullable = false)
-    var stockMinimo: Int,
+    var stockMinimo: Double,
 
     @Column(nullable = false)
     var unidadMedida: String

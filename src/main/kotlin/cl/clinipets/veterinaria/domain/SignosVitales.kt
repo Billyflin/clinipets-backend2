@@ -23,7 +23,7 @@ class SignosVitales(
     var temperatura: Double,
 
     @Column(nullable = false)
-    var frecuenciaCardiaca: String,
+    var frecuenciaCardiaca: Int,
 
     @Column(nullable = false)
     val fecha: Instant = Instant.now()

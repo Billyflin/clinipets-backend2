@@ -3,12 +3,22 @@ package cl.clinipets.veterinaria.domain
 import cl.clinipets.core.domain.AuditableEntity
 import cl.clinipets.identity.domain.User
 import jakarta.persistence.*
+import org.hibernate.annotations.SQLDelete
+import org.hibernate.annotations.SQLRestriction
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.UUID
 
 @Entity
-@Table(name = "mascotas")
+@Table(
+    name = "mascotas",
+    indexes = [
+        Index(name = "idx_mascota_tutor", columnList = "tutor_id"),
+        Index(name = "idx_mascota_chip", columnList = "chipIdentificador")
+    ]
+)
+@SQLDelete(sql = "UPDATE mascotas SET deleted = true WHERE id = ?")
+@SQLRestriction("deleted = false")
 data class Mascota(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)

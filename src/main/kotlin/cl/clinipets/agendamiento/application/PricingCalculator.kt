@@ -6,12 +6,13 @@ import cl.clinipets.servicios.domain.CategoriaServicio
 import cl.clinipets.servicios.domain.ServicioMedico
 import cl.clinipets.veterinaria.domain.Mascota
 import org.springframework.stereotype.Service
+import java.math.BigDecimal
 import java.time.LocalDate
 
 data class PrecioCalculado(
-    val precioFinal: Int,
-    val precioOriginal: Int,
-    val abono: Int,
+    val precioFinal: BigDecimal,
+    val precioOriginal: BigDecimal,
+    val abono: BigDecimal,
     val descuentoAplicado: Boolean,
     val notas: List<String>
 )
@@ -37,16 +38,16 @@ class PricingCalculator(
         val detallePromo = descuentos[servicioId]
 
         val deltaDescuento = detallePromo
-            ?.let { (it.precioOriginal - it.precioFinal).coerceAtLeast(0) }
-            ?: 0
+            ?.let { it.precioOriginal.subtract(it.precioFinal).max(BigDecimal.ZERO) }
+            ?: BigDecimal.ZERO
 
-        val precioFinal = (precioBase - deltaDescuento).coerceAtLeast(0)
+        val precioFinal = precioBase.subtract(deltaDescuento).max(BigDecimal.ZERO)
 
         return PrecioCalculado(
             precioFinal = precioFinal,
             precioOriginal = precioBase,
-            abono = servicio.precioAbono ?: 0,
-            descuentoAplicado = deltaDescuento > 0,
+            abono = servicio.precioAbono ?: BigDecimal.ZERO,
+            descuentoAplicado = deltaDescuento > BigDecimal.ZERO,
             notas = detallePromo?.notas?.toList() ?: emptyList()
         )
     }

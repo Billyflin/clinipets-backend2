@@ -122,7 +122,7 @@ data class SignosVitalesDto(
     val id: UUID,
     val peso: Double,
     val temperatura: Double,
-    val frecuenciaCardiaca: String,
+    val frecuenciaCardiaca: Int,
     val fecha: java.time.Instant
 )
 

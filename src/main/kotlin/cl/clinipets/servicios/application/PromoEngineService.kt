@@ -11,8 +11,8 @@ import java.util.UUID
 
 data class DetalleCalculado(
     val servicioId: UUID,
-    var precioFinal: Int,
-    val precioOriginal: Int,
+    var precioFinal: BigDecimal,
+    val precioOriginal: BigDecimal,
     val notas: MutableList<String> = mutableListOf()
 )
 
@@ -57,11 +57,11 @@ class PromoEngineService(
             if (!promo.estaVigente(fechaCita)) return@forEach
 
             // Filtro 2: Triggers (El carrito tiene todos los servicios requeridos?)
-            val triggersCumplidos = if (promo.serviciosTriggerIds.isEmpty()) {
+            val triggersCumplidos = if (promo.serviciosTrigger.isEmpty()) {
                 true // Si no pide triggers, se aplica "siempre" (o a los items que coincidan con beneficios)
             } else {
-                promo.serviciosTriggerIds.all { triggerId ->
-                    detalles.any { it.servicioId == triggerId }
+                promo.serviciosTrigger.all { trigger ->
+                    detalles.any { it.servicioId == trigger.id }
                 }
             }
 
@@ -69,7 +69,7 @@ class PromoEngineService(
                 // Aplicar beneficios
                 promo.beneficios.forEach { beneficio ->
                     // Buscar si el servicio beneficiado está en el carrito (resultado)
-                    val detalle = resultado[beneficio.servicioId]
+                    val detalle = resultado[beneficio.servicio.id]
                     if (detalle != null) {
                         aplicarBeneficio(detalle, beneficio.tipo, beneficio.valor, promo.nombre)
                     }
@@ -92,27 +92,26 @@ class PromoEngineService(
         when (tipo) {
             TipoDescuento.PRECIO_FIJO -> {
                 // Fija el precio al valor indicado
-                nuevoPrecio = valor.toInt()
+                nuevoPrecio = valor
             }
 
             TipoDescuento.MONTO_OFF -> {
                 // Resta el monto
-                nuevoPrecio = precioActual - valor.toInt()
+                nuevoPrecio = precioActual.subtract(valor)
             }
 
             TipoDescuento.PORCENTAJE_OFF -> {
                 // Resta porcentaje (ej: 10% -> precio - (precio * 0.10))
-                val descuento = (precioActual.toBigDecimal().multiply(valor))
-                    .divide(BigDecimal(100))
-                nuevoPrecio = precioActual - descuento.toInt()
+                val descuento = precioActual.multiply(valor).divide(BigDecimal(100))
+                nuevoPrecio = precioActual.subtract(descuento)
             }
         }
 
         // Validación: Precio no negativo
-        if (nuevoPrecio < 0) nuevoPrecio = 0
+        if (nuevoPrecio < BigDecimal.ZERO) nuevoPrecio = BigDecimal.ZERO
 
         // Si hubo cambio, guardamos
-        if (nuevoPrecio != precioActual) {
+        if (nuevoPrecio.compareTo(precioActual) != 0) {
             detalle.precioFinal = nuevoPrecio
             detalle.notas.add("Promo: $nombrePromo")
         }

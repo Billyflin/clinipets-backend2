@@ -1,11 +1,20 @@
 package cl.clinipets.identity.domain
 
+import cl.clinipets.core.domain.AuditableEntity
 import jakarta.persistence.*
-import java.time.Instant
-import java.util.UUID
+import org.hibernate.annotations.SQLDelete
+import org.hibernate.annotations.SQLRestriction
+import java.util.*
 
 @Entity
-@Table(name = "users")
+@Table(
+    name = "users",
+    indexes = [
+        Index(name = "idx_user_email", columnList = "email")
+    ]
+)
+@SQLDelete(sql = "UPDATE users SET deleted = true WHERE id = ?")
+@SQLRestriction("deleted = false")
 data class User(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
@@ -36,10 +45,6 @@ data class User(
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     var role: UserRole = UserRole.CLIENT,
-
-    @Column(length = 512)
-    var fcmToken: String? = null,
-
-    @Column(nullable = false, updatable = false)
-    val createdAt: Instant = Instant.now()
-)
+    
+    // createdAt y deleted vienen de AuditableEntity
+) : AuditableEntity()
