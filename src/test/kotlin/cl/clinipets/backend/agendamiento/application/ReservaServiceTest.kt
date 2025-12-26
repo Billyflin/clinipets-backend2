@@ -28,6 +28,7 @@ import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.boot.test.mock.mockito.MockBean
 import org.springframework.test.context.TestPropertySource
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
@@ -99,7 +100,7 @@ class ReservaServiceTest(
         servicio = servicioMedicoRepository.save(
             ServicioMedico(
                 nombre = "Esterilización Canina",
-                precioBase = 30000,
+                precioBase = BigDecimal("30000"),
                 requierePeso = true,
                 duracionMinutos = 60,
                 activo = true,
@@ -110,7 +111,7 @@ class ReservaServiceTest(
         val regla = ReglaPrecio(
             pesoMin = 0.0,
             pesoMax = 10.0,
-            precio = 30000,
+            precio = BigDecimal("30000"),
             servicio = servicio
         )
         servicio.reglas.add(regla)
@@ -150,8 +151,8 @@ class ReservaServiceTest(
         )
         
         // Cita properties checks
-        assertEquals(tutorPayload.userId, result.cita.tutorId)
-        assertEquals(30000, result.cita.precioFinal)
+        assertEquals(tutorPayload.userId, result.cita.tutor.id!!)
+        assertEquals(BigDecimal("30000"), result.cita.precioFinal)
         assertEquals(EstadoCita.CONFIRMADA, result.cita.estado)
         
         // Detalles checks

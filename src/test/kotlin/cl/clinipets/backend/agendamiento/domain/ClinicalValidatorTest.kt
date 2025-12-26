@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.Optional
 import java.util.UUID
@@ -54,8 +55,8 @@ class ClinicalValidatorTest {
     private fun baseServicio(id: UUID = UUID.randomUUID()): ServicioMedico = ServicioMedico(
         id = id,
         nombre = "Servicio X",
-        precioBase = 1000,
-        precioAbono = 200,
+        precioBase = BigDecimal("1000"),
+        precioAbono = BigDecimal("200"),
         requierePeso = false,
         duracionMinutos = 30,
         activo = true,

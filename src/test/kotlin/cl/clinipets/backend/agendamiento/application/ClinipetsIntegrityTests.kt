@@ -27,6 +27,7 @@ import org.springframework.test.web.servlet.MockMvc
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get
 import org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post
 import org.springframework.test.web.servlet.result.MockMvcResultMatchers.*
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.util.*
@@ -61,7 +62,7 @@ class ClinipetsIntegrityTests {
     private lateinit var testMascotaId: UUID
     private lateinit var testServicioId: UUID
     private lateinit var testInsumoId: UUID
-    private lateinit var testTutorId: UUID
+    private lateinit var testTutor: cl.clinipets.identity.domain.User
 
     @BeforeEach
     fun setup() {
@@ -71,7 +72,7 @@ class ClinipetsIntegrityTests {
         mascotaRepository.deleteAll()
         userRepository.deleteAll()
 
-        val tutor = userRepository.saveAndFlush(
+        testTutor = userRepository.saveAndFlush(
             cl.clinipets.identity.domain.User(
                 email = "tutor@test.com",
                 name = "Tutor",
@@ -79,13 +80,12 @@ class ClinipetsIntegrityTests {
                 role = UserRole.CLIENT
             )
         )
-        testTutorId = tutor.id!!
 
         val insumo = insumoRepository.saveAndFlush(
             Insumo(
                 nombre = "Gasas Esterilizadas",
                 stockActual = 10.0,
-                stockMinimo = 5,
+                stockMinimo = 5.0,
                 unidadMedida = "unidades"
             )
         )
@@ -94,7 +94,7 @@ class ClinipetsIntegrityTests {
         val servicio = servicioMedicoRepository.saveAndFlush(
             ServicioMedico(
                 nombre = "Curación Simple",
-                precioBase = 5000,
+                precioBase = BigDecimal("5000"),
                 requierePeso = false,
                 duracionMinutos = 15,
                 activo = true
@@ -120,7 +120,7 @@ class ClinipetsIntegrityTests {
                 raza = "Golden",
                 sexo = Sexo.MACHO,
                 fechaNacimiento = LocalDate.now().minusYears(2),
-                tutor = tutor
+                tutor = testTutor
             )
         )
         testMascotaId = mascota.id!!
@@ -166,8 +166,8 @@ class ClinipetsIntegrityTests {
                 fechaHoraInicio = Instant.now(),
                 fechaHoraFin = Instant.now().plusSeconds(1800),
                 estado = EstadoCita.CONFIRMADA,
-                precioFinal = 5000,
-                tutorId = testTutorId,
+                precioFinal = BigDecimal("5000"),
+                tutor = testTutor,
                 origen = OrigenCita.APP
             )
         )
@@ -176,7 +176,7 @@ class ClinipetsIntegrityTests {
                 cita = cita,
                 servicio = servicioMedicoRepository.findById(testServicioId).get(),
                 mascota = mascotaRepository.findById(testMascotaId).get(),
-                precioUnitario = 5000
+                precioUnitario = BigDecimal("5000")
             )
         )
         citaRepository.saveAndFlush(cita)
@@ -212,8 +212,8 @@ class ClinipetsIntegrityTests {
                     fechaHoraInicio = Instant.now(),
                     fechaHoraFin = Instant.now().plusSeconds(1800),
                     estado = EstadoCita.CONFIRMADA,
-                    precioFinal = 5000,
-                    tutorId = testTutorId,
+                    precioFinal = BigDecimal("5000"),
+                    tutor = testTutor,
                     origen = OrigenCita.APP
                 )
             )
@@ -222,7 +222,7 @@ class ClinipetsIntegrityTests {
                     cita = cita,
                     servicio = servicioMedicoRepository.findById(testServicioId).get(),
                     mascota = mascotaRepository.findById(testMascotaId).get(),
-                    precioUnitario = 5000
+                    precioUnitario = BigDecimal("5000")
                 )
             )
             citaRepository.saveAndFlush(cita).id!!

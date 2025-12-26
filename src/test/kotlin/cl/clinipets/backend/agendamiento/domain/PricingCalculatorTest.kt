@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.kotlin.any
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.whenever
+import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.UUID
 
@@ -29,8 +30,8 @@ class PricingCalculatorTest {
         val servicio = ServicioMedico(
             id = servicioId,
             nombre = "Consulta General",
-            precioBase = 1000,
-            precioAbono = 200,
+            precioBase = BigDecimal("1000"),
+            precioAbono = BigDecimal("200"),
             requierePeso = false,
             duracionMinutos = 30,
             activo = true,
@@ -42,15 +43,24 @@ class PricingCalculatorTest {
             mapOf(
                 servicioId to DetalleCalculado(
                     servicioId = servicioId,
-                    precioFinal = 1000,
-                    precioOriginal = 1000
+                    precioFinal = BigDecimal("1000"),
+                    precioOriginal = BigDecimal("1000")
                 )
             )
         )
 
         val resultado = calculator.calcularPrecioFinal(servicio, null, LocalDate.now())
 
-        assertEquals(PrecioCalculado(1000, 1000, 200, false, emptyList()), resultado)
+        assertEquals(
+            PrecioCalculado(
+                BigDecimal("1000"),
+                BigDecimal("1000"),
+                BigDecimal("200"),
+                false,
+                emptyList()
+            ),
+            resultado
+        )
     }
 
     @Test
@@ -59,8 +69,8 @@ class PricingCalculatorTest {
         val servicio = ServicioMedico(
             id = servicioId,
             nombre = "Baño Medicado",
-            precioBase = 1000,
-            precioAbono = 50,
+            precioBase = BigDecimal("1000"),
+            precioAbono = BigDecimal("50"),
             requierePeso = false,
             duracionMinutos = 20,
             activo = true,
@@ -72,8 +82,8 @@ class PricingCalculatorTest {
             mapOf(
                 servicioId to DetalleCalculado(
                     servicioId = servicioId,
-                    precioFinal = 700,
-                    precioOriginal = 1000,
+                    precioFinal = BigDecimal("700"),
+                    precioOriginal = BigDecimal("1000"),
                     notas = mutableListOf("Promo 30%")
                 )
             )
@@ -81,9 +91,9 @@ class PricingCalculatorTest {
 
         val resultado = calculator.calcularPrecioFinal(servicio, null, LocalDate.now())
 
-        assertEquals(700, resultado.precioFinal)
-        assertEquals(1000, resultado.precioOriginal)
-        assertEquals(50, resultado.abono)
+        assertEquals(BigDecimal("700"), resultado.precioFinal)
+        assertEquals(BigDecimal("1000"), resultado.precioOriginal)
+        assertEquals(BigDecimal("50"), resultado.abono)
         assertTrue(resultado.descuentoAplicado)
         assertEquals(listOf("Promo 30%"), resultado.notas)
     }

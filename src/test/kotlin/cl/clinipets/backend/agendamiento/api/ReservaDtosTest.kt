@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import org.mockito.Mockito.mock
 import org.mockito.Mockito.`when`
+import java.math.BigDecimal
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import java.util.*
@@ -45,7 +46,7 @@ class ReservaDtosTest {
         val fechaHoraInicio = Instant.now()
         val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
         val estado = EstadoCita.CONFIRMADA
-        val precioFinal = 10000
+        val precioFinal = BigDecimal("10000")
         val tutorId = UUID.randomUUID()
         val origen = OrigenCita.WEB
         
@@ -55,7 +56,7 @@ class ReservaDtosTest {
             nombreServicio = "Servicio Test",
             mascotaId = UUID.randomUUID(),
             nombreMascota = "Mascota Test",
-            precioUnitario = 5000
+            precioUnitario = BigDecimal("5000")
         )
 
         val response = CitaResponse(
@@ -95,12 +96,15 @@ class ReservaDtosTest {
         `when`(mascotaMock.id).thenReturn(UUID.randomUUID())
         `when`(mascotaMock.nombre).thenReturn("Firulais")
 
+        val tutorMock = mock(cl.clinipets.identity.domain.User::class.java)
+        val tutorId = UUID.randomUUID()
+        `when`(tutorMock.id).thenReturn(tutorId)
+
         val citaId = UUID.randomUUID()
         val fechaHoraInicio = Instant.now()
         val fechaHoraFin = fechaHoraInicio.plus(1, ChronoUnit.HOURS)
         val estado = EstadoCita.CONFIRMADA
-        val precioFinal = 15000
-        val tutorId = UUID.randomUUID()
+        val precioFinal = BigDecimal("15000")
         val origen = OrigenCita.APP
 
         // Create Cita
@@ -110,7 +114,7 @@ class ReservaDtosTest {
             fechaHoraFin = fechaHoraFin,
             estado = estado,
             precioFinal = precioFinal,
-            tutorId = tutorId,
+            tutor = tutorMock,
             origen = origen
         )
         
@@ -120,7 +124,7 @@ class ReservaDtosTest {
             cita = cita,
             servicio = servicioMock,
             mascota = mascotaMock,
-            precioUnitario = 15000
+            precioUnitario = BigDecimal("15000")
         )
         cita.detalles.add(detalle)
 
