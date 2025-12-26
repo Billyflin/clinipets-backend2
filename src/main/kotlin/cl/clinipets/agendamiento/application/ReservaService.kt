@@ -69,17 +69,18 @@ class ReservaService(
         // 1. Recaudación Realizada (Solo finalizadas)
         val recaudacionTotalRealizada = citasValidas
             .filter { it.estado == EstadoCita.FINALIZADA }
-            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.precioFinal) }
+            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.totalPagado()) }
 
         // 2. Proyección Pendiente (Confirmadas pero no finalizadas)
         val proyeccionPendiente = citasValidas
             .filter { it.estado == EstadoCita.CONFIRMADA }
-            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.precioFinal) }
+            .fold(BigDecimal.ZERO) { acc, cita -> acc.add(cita.saldoPendiente()) }
 
-        // 3. Desglose de Métodos de Pago (Solo finalizadas)
+        // 3. Desglose de Métodos de Pago (Solo pagos registrados hoy)
         val desgloseMetodosPago = citasValidas
-            .filter { it.estado == EstadoCita.FINALIZADA && it.metodoPagoSaldo != null }
-            .groupingBy { it.metodoPagoSaldo!! }
+            .flatMap { it.pagos }
+            .filter { it.fecha >= startOfDay && it.fecha < endOfDay }
+            .groupingBy { it.metodo }
             .eachCount()
 
         val totalGeneral = recaudacionTotalRealizada
@@ -359,8 +360,19 @@ class ReservaService(
                 val staffUser = userRepository.findById(staff.userId)
                     .orElseThrow { NotFoundException("Staff no encontrado") }
 
-                // 2. Actualizar estado Cita
-                cita.metodoPagoSaldo = metodoPago
+                // 2. Registrar Pago si se especifica método
+                if (metodoPago != null) {
+                    val pago = Pago(
+                        cita = cita,
+                        monto = cita.precioFinal, // Asumimos pago total por ahora en finalización simplificada
+                        metodo = metodoPago,
+                        registradoPor = staffUser,
+                        notas = "Pago al finalizar cita"
+                    )
+                    cita.pagos.add(pago)
+                }
+
+                // 3. Actualizar estado Cita
                 cita.staffFinalizador = staffUser
                 cita.cambiarEstado(EstadoCita.FINALIZADA, staff.email)
                 

@@ -2,6 +2,7 @@ package cl.clinipets.maestros.application
 
 import cl.clinipets.veterinaria.domain.Especie
 import org.slf4j.LoggerFactory
+import org.springframework.cache.annotation.Cacheable
 import org.springframework.stereotype.Service
 
 @Service
@@ -36,8 +37,9 @@ class RazasService {
         "Azul Ruso"
     ).sorted()
 
+    @Cacheable("razas")
     fun getRazas(especie: Especie?): List<String> {
-        logger.debug("[RAZAS_SERVICE] Obteniendo razas para especie: {}", especie ?: "TODAS")
+        logger.info("[CACHE_MISS] Cargando razas para especie: {}", especie ?: "TODAS")
         return when (especie) {
             Especie.PERRO -> razasPerro
             Especie.GATO -> razasGato

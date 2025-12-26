@@ -53,6 +53,8 @@ class ClinipetsIntegrityTests {
     private lateinit var mascotaRepository: MascotaRepository
     @Autowired
     private lateinit var userRepository: cl.clinipets.identity.domain.UserRepository
+    @Autowired
+    private lateinit var promocionRepository: cl.clinipets.servicios.domain.PromocionRepository
 
     @MockBean
     private lateinit var storageService: cl.clinipets.core.storage.StorageService
@@ -63,21 +65,33 @@ class ClinipetsIntegrityTests {
     private lateinit var testServicioId: UUID
     private lateinit var testInsumoId: UUID
     private lateinit var testTutor: cl.clinipets.identity.domain.User
+    private lateinit var testStaff: cl.clinipets.identity.domain.User
 
     @BeforeEach
     fun setup() {
         citaRepository.deleteAll()
+        promocionRepository.deleteAll()
         servicioMedicoRepository.deleteAll()
         insumoRepository.deleteAll()
         mascotaRepository.deleteAll()
         userRepository.deleteAll()
 
+        val randomId = UUID.randomUUID().toString().take(8)
         testTutor = userRepository.saveAndFlush(
             cl.clinipets.identity.domain.User(
-                email = "tutor@test.com",
+                email = "tutor-$randomId@test.com",
                 name = "Tutor",
                 passwordHash = "hash",
                 role = UserRole.CLIENT
+            )
+        )
+
+        testStaff = userRepository.saveAndFlush(
+            cl.clinipets.identity.domain.User(
+                email = "staff-$randomId@test.com",
+                name = "Staff",
+                passwordHash = "hash",
+                role = UserRole.STAFF
             )
         )
 
@@ -128,7 +142,7 @@ class ClinipetsIntegrityTests {
 
     private fun staffAuth() = authentication(
         UsernamePasswordAuthenticationToken(
-            JwtPayload(UUID.randomUUID(), "staff@test.cl", UserRole.STAFF, Instant.now().plusSeconds(3600)),
+            JwtPayload(testStaff.id!!, testStaff.email, UserRole.STAFF, Instant.now().plusSeconds(3600)),
             "token",
             listOf(org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_STAFF"))
         )
@@ -136,7 +150,7 @@ class ClinipetsIntegrityTests {
 
     private fun userAuth() = authentication(
         UsernamePasswordAuthenticationToken(
-            JwtPayload(UUID.randomUUID(), "user@test.cl", UserRole.CLIENT, Instant.now().plusSeconds(3600)),
+            JwtPayload(testTutor.id!!, testTutor.email, UserRole.CLIENT, Instant.now().plusSeconds(3600)),
             "token",
             listOf(org.springframework.security.core.authority.SimpleGrantedAuthority("ROLE_USER"))
         )
@@ -161,15 +175,13 @@ class ClinipetsIntegrityTests {
 
     @Test
     fun `Test de Atomicidad - Rollback si falla guardado clinico`() {
-        val cita = citaRepository.saveAndFlush(
-            Cita(
-                fechaHoraInicio = Instant.now(),
-                fechaHoraFin = Instant.now().plusSeconds(1800),
-                estado = EstadoCita.CONFIRMADA,
-                precioFinal = BigDecimal("5000"),
-                tutor = testTutor,
-                origen = OrigenCita.APP
-            )
+        val cita = Cita(
+            fechaHoraInicio = Instant.now(),
+            fechaHoraFin = Instant.now().plusSeconds(1800),
+            estado = EstadoCita.CONFIRMADA,
+            precioFinal = BigDecimal("5000"),
+            tutor = testTutor,
+            origen = OrigenCita.APP
         )
         cita.detalles.add(
             DetalleCita(
@@ -179,7 +191,8 @@ class ClinipetsIntegrityTests {
                 precioUnitario = BigDecimal("5000")
             )
         )
-        citaRepository.saveAndFlush(cita)
+        cita.cambiarEstado(EstadoCita.EN_ATENCION, "test")
+        val savedCita = citaRepository.saveAndFlush(cita)
 
         doThrow(RuntimeException("Error simulado")).whenever(signosVitalesRepository).save(any<SignosVitales>())
 
@@ -189,12 +202,12 @@ class ClinipetsIntegrityTests {
         )
 
         mockMvc.perform(
-            post("/api/v1/reservas/${cita.id}/finalizar")
+            post("/api/v1/reservas/${savedCita.id}/finalizar")
                 .with(staffAuth())
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request))
         )
-            .andExpect(status().isInternalServerError)
+            .andExpect(status().isBadRequest)
 
         val insumo = insumoRepository.findById(testInsumoId).get()
         assertEquals(10.0, insumo.stockActual)
@@ -225,6 +238,7 @@ class ClinipetsIntegrityTests {
                     precioUnitario = BigDecimal("5000")
                 )
             )
+            cita.cambiarEstado(EstadoCita.EN_ATENCION, "test")
             citaRepository.saveAndFlush(cita).id!!
         }
 

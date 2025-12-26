@@ -75,6 +75,19 @@ enum class TendenciaPeso {
     ESTABLE, AUMENTO, DISMINUCION, FLUCTUANTE
 }
 
+data class HistorialEvolucionDto(
+    val mascotaId: UUID,
+    val nombreMascota: String,
+    val registros: List<PuntoEvolucionDto>
+)
+
+data class PuntoEvolucionDto(
+    val fecha: Instant,
+    val peso: Double?,
+    val temperatura: Double?,
+    val origen: String // "FICHA" o "CONTROL"
+)
+
 @Service
 class HistorialClinicoService(
     private val mascotaRepository: MascotaRepository,
@@ -83,6 +96,48 @@ class HistorialClinicoService(
     private val signosVitalesRepository: SignosVitalesRepository
 ) {
     private val logger = LoggerFactory.getLogger(HistorialClinicoService::class.java)
+
+    @Transactional(readOnly = true)
+    fun obtenerEvolucionMedica(mascotaId: UUID, user: JwtPayload): HistorialEvolucionDto {
+        val mascota = mascotaRepository.findById(mascotaId)
+            .orElseThrow { NotFoundException("Mascota no encontrada") }
+
+        if (user.role == UserRole.CLIENT && mascota.tutor.id != user.userId) {
+            throw UnauthorizedException("No tienes permiso para ver esta evolución")
+        }
+
+        // Obtener datos de Fichas
+        val fichas = fichaClinicaRepository.findAllByMascotaIdOrderByFechaAtencionAsc(mascotaId)
+        val puntosFicha = fichas.map {
+            PuntoEvolucionDto(
+                fecha = it.fechaAtencion,
+                peso = it.signosVitales.pesoRegistrado,
+                temperatura = it.signosVitales.temperatura,
+                origen = "FICHA"
+            )
+        }
+
+        // Obtener datos de controles de signos vitales (independientes de ficha)
+        val vitales = signosVitalesRepository.findAllByMascotaIdOrderByFechaDesc(mascotaId)
+        val puntosControl = vitales.map {
+            PuntoEvolucionDto(
+                fecha = it.fecha,
+                peso = it.peso,
+                temperatura = it.temperatura,
+                origen = "CONTROL"
+            )
+        }
+
+        val todosLosPuntos = (puntosFicha + puntosControl)
+            .filter { it.peso != null || it.temperatura != null }
+            .sortedBy { it.fecha }
+
+        return HistorialEvolucionDto(
+            mascotaId = mascota.id!!,
+            nombreMascota = mascota.nombre,
+            registros = todosLosPuntos
+        )
+    }
 
     @Transactional(readOnly = true)
     fun obtenerHistorialCompleto(mascotaId: UUID, user: JwtPayload): HistorialCompletoResponse {
@@ -243,8 +298,8 @@ class HistorialClinicoService(
         }
 
         val ultimo = vitales.first().toDto()
-        val pesos = vitales.map { it.peso }
-        val pesoPromedio = pesos.average()
+        val pesos = vitales.mapNotNull { it.peso }
+        val pesoPromedio = if (pesos.isNotEmpty()) pesos.average() else null
 
         // Calcular tendencia (últimos 3 registros vs anteriores)
         val tendencia = if (pesos.size >= 4) {

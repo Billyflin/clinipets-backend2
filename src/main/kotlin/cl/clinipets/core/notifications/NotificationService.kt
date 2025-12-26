@@ -13,12 +13,12 @@ import java.util.UUID
 @Service
 class NotificationService(
     private val userRepository: UserRepository,
-    private val deviceTokenRepository: DeviceTokenRepository
+    private val channels: List<NotificationChannel>
 ) {
     private val logger = LoggerFactory.getLogger(NotificationService::class.java)
 
     /**
-     * Envía notificación push a todos los dispositivos de un usuario
+     * Envía notificación a través de todos los canales disponibles para un usuario
      */
     @Transactional(readOnly = true)
     fun enviarNotificacion(
@@ -27,42 +27,19 @@ class NotificationService(
         cuerpo: String,
         data: Map<String, String> = emptyMap()
     ) {
-        try {
-            val user = userRepository.findById(userId).orElse(null) ?: run {
-                logger.warn("[PUSH] Usuario $userId no encontrado")
-                return
+        val user = userRepository.findById(userId).orElse(null) ?: run {
+            logger.warn("[NOTIF] Usuario $userId no encontrado")
+            return
+        }
+
+        logger.info("[NOTIF] Procesando envío para ${user.email} en ${channels.size} canales")
+
+        channels.forEach { channel ->
+            try {
+                channel.send(userId, user.email, titulo, cuerpo, data)
+            } catch (ex: Exception) {
+                logger.error("[NOTIF] Error en canal ${channel.getName()} para usuario $userId: ${ex.message}")
             }
-
-            val tokens = deviceTokenRepository.findAllByUserId(userId)
-            if (tokens.isEmpty()) {
-                logger.debug("[PUSH] Usuario ${user.email} sin dispositivos registrados")
-                return
-            }
-
-            logger.info("[PUSH] Enviando a ${user.email} (${tokens.size} dispositivos)")
-
-            tokens.forEach { device ->
-                try {
-                    val message = Message.builder()
-                        .setToken(device.token)
-                        .setNotification(
-                            Notification.builder()
-                                .setTitle(titulo)
-                                .setBody(cuerpo)
-                                .build()
-                        )
-                        .putAllData(data)
-                        .build()
-
-                    val response = FirebaseMessaging.getInstance().send(message)
-                    logger.debug("[PUSH] Enviado OK a token parcial ${device.token.take(8)}...")
-                } catch (ex: Exception) {
-                    logger.error("[PUSH] Error enviando a un dispositivo de $userId: ${ex.message}")
-                    // Opcional: Si el error es "invalid token", eliminarlo de la DB
-                }
-            }
-        } catch (ex: Exception) {
-            logger.error("[PUSH] Error general enviando notificación a $userId", ex)
         }
     }
 

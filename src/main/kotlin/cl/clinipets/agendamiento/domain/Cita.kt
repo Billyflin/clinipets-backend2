@@ -68,14 +68,18 @@ class Cita(
     @Column(length = 50)
     var tokenCompensacion: String? = null,
 
-    @Enumerated(EnumType.STRING)
-    @Column(length = 20)
-    var metodoPagoSaldo: MetodoPago? = null,
+    @OneToMany(mappedBy = "cita", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
+    val pagos: MutableList<Pago> = mutableListOf(),
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "staff_finalizador_id")
     var staffFinalizador: User? = null
 ) : AuditableEntity() {
+
+    fun totalPagado(): BigDecimal = pagos.fold(BigDecimal.ZERO) { acc, pago -> acc.add(pago.monto) }
+
+    fun saldoPendiente(): BigDecimal = precioFinal.subtract(totalPagado()).max(BigDecimal.ZERO)
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Cita) return false

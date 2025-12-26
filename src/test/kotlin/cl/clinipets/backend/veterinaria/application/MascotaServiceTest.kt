@@ -51,9 +51,10 @@ class MascotaServiceTest(
         mascotaRepository.deleteAll()
         userRepository.deleteAll()
 
+        val randomId = java.util.UUID.randomUUID().toString().take(8)
         val tutor = userRepository.save(
             User(
-                email = "tutor@test.com",
+                email = "tutor-$randomId@test.com",
                 name = "Tutor",
                 passwordHash = "pw",
                 role = UserRole.CLIENT
@@ -61,7 +62,7 @@ class MascotaServiceTest(
         )
         val otro = userRepository.save(
             User(
-                email = "otro@test.com",
+                email = "otro-$randomId@test.com",
                 name = "Otro",
                 passwordHash = "pw",
                 role = UserRole.CLIENT

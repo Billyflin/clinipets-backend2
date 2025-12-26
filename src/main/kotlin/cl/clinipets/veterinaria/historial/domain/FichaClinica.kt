@@ -7,6 +7,9 @@ import cl.clinipets.veterinaria.domain.Mascota
 import jakarta.persistence.*
 import org.hibernate.annotations.SQLDelete
 import org.hibernate.annotations.SQLRestriction
+import org.hibernate.envers.Audited
+import org.hibernate.envers.NotAudited
+import org.hibernate.envers.RelationTargetAuditMode
 import java.time.Instant
 import java.time.LocalDate
 import java.util.UUID
@@ -33,6 +36,7 @@ data class PlanSanitario(
 )
 
 @Entity
+@Audited
 @Table(name = "fichas_clinicas")
 @SQLDelete(sql = "UPDATE fichas_clinicas SET deleted = true WHERE id = ?")
 @SQLRestriction("deleted = false")
@@ -45,6 +49,7 @@ data class FichaClinica(
     @JoinColumn(name = "mascota_id", nullable = false)
     val mascota: Mascota,
 
+    @NotAudited
     @OneToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "cita_id", nullable = true)
     val cita: Cita? = null,
@@ -76,6 +81,7 @@ data class FichaClinica(
     @Embedded
     val planSanitario: PlanSanitario = PlanSanitario(),
 
+    @NotAudited
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "autor_id", nullable = false)
     val autor: User

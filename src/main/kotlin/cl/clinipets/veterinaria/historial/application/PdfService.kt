@@ -110,7 +110,7 @@ class PdfService(
             tutor.phone,
             tutor.email,
             tutor.address,
-            ficha.signosVitales.pesoRegistrado ?: mascota.pesoActual.toDouble()
+            ficha.signosVitales.pesoRegistrado ?: mascota.pesoActual ?: 0.0
         )
 
         // Signos Vitales Estructurados
@@ -244,7 +244,7 @@ class PdfService(
             addHeader("Fecha Refuerzo")
             addHeader("Lote")
 
-            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("es", "CL"))
+            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", java.util.Locale.of("es", "CL"))
                 .withZone(clinicZoneId)
 
             vacunas.forEach { v ->
@@ -289,7 +289,7 @@ class PdfService(
             addHeader("Fecha Aplicación")
             addHeader("Fecha Refuerzo")
 
-            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("es", "CL"))
+            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", java.util.Locale.of("es", "CL"))
                 .withZone(clinicZoneId)
 
             desparasitaciones.forEach { d ->
@@ -337,7 +337,7 @@ class PdfService(
             addHeader("Fecha Programada")
             addHeader("Días Restantes")
 
-            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", Locale("es", "CL"))
+            val formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy", java.util.Locale.of("es", "CL"))
                 .withZone(clinicZoneId)
 
             proximos.forEach { p ->
@@ -365,7 +365,7 @@ class PdfService(
 
         // Footer
         val fechaEmision = Paragraph(
-            "Documento generado el ${DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", Locale("es", "CL")).withZone(clinicZoneId).format(Instant.now())}",
+            "Documento generado el ${DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm", java.util.Locale.of("es", "CL")).withZone(clinicZoneId).format(Instant.now())}",
             smallFont
         ).apply {
             alignment = Element.ALIGN_CENTER
@@ -699,7 +699,7 @@ class PdfService(
     }
 
     private fun formatCurrency(amount: BigDecimal): String {
-        val formatter = java.text.NumberFormat.getInstance(Locale.of("es", "CL")).apply {
+        val formatter = java.text.NumberFormat.getInstance(java.util.Locale.of("es", "CL")).apply {
             minimumFractionDigits = 0
             maximumFractionDigits = 0
         }

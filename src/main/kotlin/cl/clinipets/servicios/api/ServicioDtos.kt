@@ -60,7 +60,7 @@ fun ServicioMedico.toDto() = ServicioMedicoDto(
     especiesPermitidas = especiesPermitidas,
     stock = stock,
     bloqueadoSiEsterilizado = bloqueadoSiEsterilizado,
-    serviciosRequeridosIds = serviciosRequeridosIds,
+    serviciosRequeridosIds = serviciosRequeridos.mapNotNull { it.id }.toSet(),
     reglas = reglas.map(ReglaPrecio::toDto),
     insumos = insumos.map(ServicioInsumo::toDto)
 )

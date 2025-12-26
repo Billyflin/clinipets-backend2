@@ -87,8 +87,8 @@ data class MascotaResponse(
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
     val temperamento: Temperamento,
 
-    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, example = "5.5")
-    val pesoActual: Double,
+    @field:Schema(requiredMode = Schema.RequiredMode.NOT_REQUIRED, example = "5.5")
+    val pesoActual: Double?,
 
     val fechaNacimiento: LocalDate?,
 
@@ -120,7 +120,7 @@ data class PasaporteSaludResponse(
 
 data class SignosVitalesDto(
     val id: UUID,
-    val peso: Double,
+    val peso: Double?,
     val temperatura: Double,
     val frecuenciaCardiaca: Int,
     val fecha: java.time.Instant

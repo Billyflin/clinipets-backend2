@@ -10,6 +10,7 @@ import cl.clinipets.veterinaria.api.toItemResponse
 import cl.clinipets.veterinaria.api.toResponse
 import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
+import cl.clinipets.veterinaria.domain.MascotaSpecifications
 import cl.clinipets.veterinaria.domain.PlanPreventivoRepository
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.core.web.NotFoundException
@@ -17,6 +18,7 @@ import cl.clinipets.core.web.UnauthorizedException
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.identity.domain.UserRole
 import org.slf4j.LoggerFactory
+import org.springframework.data.jpa.domain.Specification
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.math.BigDecimal
@@ -31,6 +33,25 @@ class MascotaService(
     private val signosVitalesRepository: cl.clinipets.veterinaria.domain.SignosVitalesRepository
 ) {
     private val logger = LoggerFactory.getLogger(MascotaService::class.java)
+
+    @Transactional(readOnly = true)
+    fun buscar(
+        nombre: String?,
+        especie: cl.clinipets.veterinaria.domain.Especie?,
+        raza: String?,
+        esterilizado: Boolean?,
+        tutorId: UUID?,
+        chip: String?
+    ): List<MascotaResponse> {
+        val spec = Specification.where(MascotaSpecifications.conNombre(nombre))
+            .and(MascotaSpecifications.conEspecie(especie))
+            .and(MascotaSpecifications.conRaza(raza))
+            .and(MascotaSpecifications.conEsterilizado(esterilizado))
+            .and(MascotaSpecifications.conTutor(tutorId))
+            .and(MascotaSpecifications.conChip(chip))
+
+        return mascotaRepository.findAll(spec).map { it.toResponse() }
+    }
 
     @Transactional(readOnly = true)
     fun consultarHistorialVitals(
@@ -69,9 +90,8 @@ class MascotaService(
                 esterilizado = request.esterilizado,
                 chipIdentificador = request.chipIdentificador,
                 temperamento = request.temperamento,
-                // Valores por defecto para permitir registro flexible
-                pesoActual = request.pesoActual ?: -1.0,
-                fechaNacimiento = request.fechaNacimiento ?: LocalDate.of(1900, 1, 1),
+                pesoActual = request.pesoActual,
+                fechaNacimiento = request.fechaNacimiento,
                 tutor = user
             )
         )

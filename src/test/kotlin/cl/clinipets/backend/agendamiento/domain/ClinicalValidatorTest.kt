@@ -38,14 +38,11 @@ class ClinicalValidatorTest {
 
     @Test
     fun `lanza error si falta test retroviral para vacuna de leucemia`() {
-        val requeridoId = UUID.randomUUID()
-        val servicio = baseServicio().apply { serviciosRequeridosIds = mutableSetOf(requeridoId) }
-        val mascota = baseMascota().apply { testRetroviralNegativo = false }
-
-        val servicioRequerido = baseServicio(requeridoId).apply {
+        val servicioRequerido = baseServicio().apply {
             nombre = "Vacuna Leucemia Felina"
         }
-        whenever(servicioRepo.findById(any())).thenReturn(Optional.of(servicioRequerido))
+        val servicio = baseServicio().apply { serviciosRequeridos = mutableSetOf(servicioRequerido) }
+        val mascota = baseMascota().apply { testRetroviralNegativo = false }
 
         assertThrows(BadRequestException::class.java) {
             validator.validarRequisitosClinicos(servicio, mascota, emptySet())

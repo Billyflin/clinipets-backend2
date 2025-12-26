@@ -3,6 +3,7 @@ package cl.clinipets.veterinaria.api
 import cl.clinipets.core.security.JwtPayload
 import cl.clinipets.veterinaria.historial.application.HistorialClinicoService
 import cl.clinipets.veterinaria.historial.application.HistorialCompletoResponse
+import cl.clinipets.veterinaria.historial.application.HistorialEvolucionDto
 import cl.clinipets.veterinaria.historial.application.PdfService
 import io.swagger.v3.oas.annotations.Operation
 import io.swagger.v3.oas.annotations.security.SecurityRequirement
@@ -31,6 +32,15 @@ class HistorialController(
     ): ResponseEntity<HistorialCompletoResponse> {
         val historial = historialService.obtenerHistorialCompleto(mascotaId, user)
         return ResponseEntity.ok(historial)
+    }
+
+    @Operation(summary = "Obtener evolución de signos vitales (peso y temperatura) histórica")
+    @GetMapping("/mascota/{mascotaId}/evolucion")
+    fun obtenerEvolucion(
+        @PathVariable mascotaId: UUID,
+        @AuthenticationPrincipal user: JwtPayload
+    ): ResponseEntity<HistorialEvolucionDto> {
+        return ResponseEntity.ok(historialService.obtenerEvolucionMedica(mascotaId, user))
     }
 
     @Operation(summary = "Descargar carnet sanitario en PDF")

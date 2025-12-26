@@ -142,8 +142,8 @@ class DataSeeder(
         val testRetroviral = mapServicios["test rápido leucemia/vif (retroviral)"]
 
         if (vacunaLeucemia != null && testRetroviral != null) {
-            if (!vacunaLeucemia.serviciosRequeridosIds.contains(testRetroviral.id!!)) {
-                vacunaLeucemia.serviciosRequeridosIds.add(testRetroviral.id!!)
+            if (!vacunaLeucemia.serviciosRequeridos.contains(testRetroviral)) {
+                vacunaLeucemia.serviciosRequeridos.add(testRetroviral)
                 servicioMedicoRepository.save(vacunaLeucemia)
             }
         }
@@ -352,7 +352,7 @@ class DataSeeder(
             user = userRepository.save(user)
         }
 
-        val mascotas = mascotaRepository.findAllByTutorId(user!!.id!!)
+        val mascotas = mascotaRepository.findAllByTutorId(user.id!!)
         if (mascotas.isEmpty()) {
             val firulais = Mascota(
                 nombre = "Firulais Test",

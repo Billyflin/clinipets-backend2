@@ -16,8 +16,8 @@ class SignosVitales(
     @JoinColumn(name = "mascota_id", nullable = false)
     val mascota: Mascota,
 
-    @Column(nullable = false)
-    var peso: Double,
+    @Column(nullable = true)
+    var peso: Double?,
 
     @Column(nullable = false)
     var temperatura: Double,

@@ -24,28 +24,25 @@ class ClinicalValidator(
             throw BadRequestException("La mascota ${mascota.nombre} ya está esterilizada. No puede realizarse '${servicio.nombre}'.")
         }
 
-        if (servicio.serviciosRequeridosIds.isEmpty()) return
+        if (servicio.serviciosRequeridos.isEmpty()) return
 
-        servicio.serviciosRequeridosIds.forEach { reqId ->
+        servicio.serviciosRequeridos.forEach { servicioReq ->
+            val reqId = servicioReq.id!!
             if (!serviciosEnCarritoIds.contains(reqId)) {
-                val servicioReq = servicioMedicoRepository.findById(reqId).orElse(null)
                 var cumpleClinicamente = false
 
-                if (servicioReq != null) {
-                    val nombreReq = servicioReq.nombre
-                    if (nombreReq.contains("Retroviral", ignoreCase = true) ||
-                        nombreReq.contains("Leucemia", ignoreCase = true)
-                    ) {
-                        if (mascota.testRetroviralNegativo) {
-                            cumpleClinicamente = true
-                            logger.info(">>> [VALIDACION] Dependencia '${servicioReq.nombre}' satisfecha por historial clínico (Negativo).")
-                        }
+                val nombreReq = servicioReq.nombre
+                if (nombreReq.contains("Retroviral", ignoreCase = true) ||
+                    nombreReq.contains("Leucemia", ignoreCase = true)
+                ) {
+                    if (mascota.testRetroviralNegativo) {
+                        cumpleClinicamente = true
+                        logger.info(">>> [VALIDACION] Dependencia '${servicioReq.nombre}' satisfecha por historial clínico (Negativo).")
                     }
                 }
 
                 if (!cumpleClinicamente) {
-                    val nombreReq = servicioReq?.nombre ?: "Servicio Requerido"
-                    throw BadRequestException("El servicio '${servicio.nombre}' requiere que agregues también: '$nombreReq' (o que la mascota ya cumpla el requisito clínico).")
+                    throw BadRequestException("El servicio '${servicio.nombre}' requiere que agregues también: '${servicioReq.nombre}' (o que la mascota ya cumpla el requisito clínico).")
                 }
             }
         }

@@ -33,6 +33,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(
@@ -50,7 +51,8 @@ class ReservaServiceTest(
     @Autowired private val mascotaRepository: MascotaRepository,
     @Autowired private val servicioMedicoRepository: ServicioMedicoRepository,
     @Autowired private val citaRepository: CitaRepository,
-    @Autowired private val inventarioService: InventarioService
+    @Autowired private val inventarioService: InventarioService,
+    @Autowired private val promocionRepository: cl.clinipets.servicios.domain.PromocionRepository
 ) {
     @MockBean
     private lateinit var storageService: StorageService
@@ -63,13 +65,15 @@ class ReservaServiceTest(
     @BeforeEach
     fun setup() {
         citaRepository.deleteAll()
+        promocionRepository.deleteAll()
         servicioMedicoRepository.deleteAll()
         mascotaRepository.deleteAll()
         userRepository.deleteAll()
 
+        val randomId = UUID.randomUUID().toString().take(8)
         val tutor = userRepository.save(
             User(
-                email = "tutor@test.com",
+                email = "tutor-$randomId@test.com",
                 name = "Tutor",
                 passwordHash = "pw",
                 role = UserRole.CLIENT
@@ -84,7 +88,7 @@ class ReservaServiceTest(
 
         val staff = userRepository.save(
             User(
-                email = "staff@test.com",
+                email = "staff-$randomId@test.com",
                 name = "Staff",
                 passwordHash = "pw",
                 role = UserRole.STAFF
@@ -152,7 +156,7 @@ class ReservaServiceTest(
         
         // Cita properties checks
         assertEquals(tutorPayload.userId, result.cita.tutor.id!!)
-        assertEquals(BigDecimal("30000"), result.cita.precioFinal)
+        assertEquals(BigDecimal("30000.00"), result.cita.precioFinal.setScale(2))
         assertEquals(EstadoCita.CONFIRMADA, result.cita.estado)
         
         // Detalles checks

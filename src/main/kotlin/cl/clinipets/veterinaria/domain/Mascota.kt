@@ -5,11 +5,14 @@ import cl.clinipets.identity.domain.User
 import jakarta.persistence.*
 import org.hibernate.annotations.SQLDelete
 import org.hibernate.annotations.SQLRestriction
+import org.hibernate.envers.Audited
+import org.hibernate.envers.NotAudited
 import java.math.BigDecimal
 import java.time.LocalDate
 import java.util.UUID
 
 @Entity
+@Audited
 @Table(
     name = "mascotas",
     indexes = [
@@ -31,8 +34,8 @@ data class Mascota(
     @Column(nullable = false, length = 16)
     val especie: Especie,
 
-    @Column(nullable = false)
-    var pesoActual: Double,
+    @Column(nullable = true)
+    var pesoActual: Double?,
 
     @Column(nullable = false)
     var raza: String = "Mestizo",
@@ -51,13 +54,15 @@ data class Mascota(
     @Column(nullable = false, length = 10)
     var temperamento: Temperamento = Temperamento.DOCIL,
 
-    @Column(nullable = false)
-    val fechaNacimiento: LocalDate,
+    @Column(nullable = true)
+    val fechaNacimiento: LocalDate?,
 
+    @NotAudited
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "tutor_id", nullable = false)
     var tutor: User,
 
+    @NotAudited
     @OneToMany(mappedBy = "mascota", cascade = [CascadeType.ALL], fetch = FetchType.LAZY)
     val signosVitales: MutableList<SignosVitales> = mutableListOf(),
 

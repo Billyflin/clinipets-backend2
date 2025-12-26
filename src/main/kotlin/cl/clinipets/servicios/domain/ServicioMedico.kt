@@ -51,10 +51,13 @@ class ServicioMedico(
     @Column(nullable = false)
     var bloqueadoSiEsterilizado: Boolean = false,
 
-    @ElementCollection(fetch = FetchType.EAGER)
-    @CollectionTable(name = "servicio_dependencias", joinColumns = [JoinColumn(name = "servicio_id")])
-    @Column(name = "servicio_requerido_id")
-    var serviciosRequeridosIds: MutableSet<UUID> = mutableSetOf(),
+    @ManyToMany(fetch = FetchType.LAZY)
+    @JoinTable(
+        name = "servicio_dependencias_rel",
+        joinColumns = [JoinColumn(name = "servicio_id")],
+        inverseJoinColumns = [JoinColumn(name = "servicio_requerido_id")]
+    )
+    var serviciosRequeridos: MutableSet<ServicioMedico> = mutableSetOf(),
 
     @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     @org.hibernate.annotations.Fetch(org.hibernate.annotations.FetchMode.SUBSELECT)
@@ -66,8 +69,9 @@ class ServicioMedico(
 ) : AuditableEntity() {
     fun calcularPrecioPara(mascota: Mascota): BigDecimal {
         if (!requierePeso) return precioBase
+        val peso = mascota.pesoActual ?: return precioBase
         val regla = reglas.firstOrNull {
-            (mascota.pesoActual >= it.pesoMin) && (mascota.pesoActual <= it.pesoMax)
+            (peso >= it.pesoMin) && (peso <= it.pesoMax)
         }
         return regla?.precio ?: precioBase
     }

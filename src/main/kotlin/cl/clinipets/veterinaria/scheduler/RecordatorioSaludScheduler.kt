@@ -6,58 +6,52 @@ import org.slf4j.LoggerFactory
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Component
 import java.time.LocalDate
-import java.time.format.DateTimeFormatter
+import java.time.ZoneId
 
 @Component
 class RecordatorioSaludScheduler(
-    private val fichaRepository: FichaClinicaRepository,
-    private val notificationService: NotificationService
+    private val fichaClinicaRepository: FichaClinicaRepository,
+    private val notificationService: NotificationService,
+    private val clinicZoneId: ZoneId
 ) {
     private val logger = LoggerFactory.getLogger(RecordatorioSaludScheduler::class.java)
 
     /**
-     * Revisa vacunas y controles próximos (mañana y en 7 días)
-     * Cron: Todos los días a las 10:00 AM
+     * Revisa planes sanitarios y envía recordatorios 7 días antes
+     * Ejecuta cada día a las 10:00 AM
      */
     @Scheduled(cron = "0 0 10 * * *")
-    fun enviarRecordatoriosSalud() {
-        logger.info("[SALUD_SCHEDULER] Iniciando revisión de recordatorios sanitarios")
-        val hoy = LocalDate.now()
-        val manana = hoy.plusDays(1)
-        val enUnaSemana = hoy.plusDays(7)
+    fun procesarRecordatoriosSalud() {
+        val hoy = LocalDate.now(clinicZoneId)
+        val recordatorioEn = hoy.plusDays(7)
+        
+        logger.info("[SALUD-SCHEDULER] Buscando hitos sanitarios para el día: $recordatorioEn")
 
-        val fichas = fichaRepository.findAll() // En producción optimizar con Query específica
-
-        // 1. Vacunas
-        fichas.filter { it.planSanitario.fechaProximaVacuna != null }.forEach { ficha ->
-            val fecha = ficha.planSanitario.fechaProximaVacuna!!
+        val todasFichas = fichaClinicaRepository.findAll() // Opcional: Optimizar con query específica
+        
+        todasFichas.forEach { ficha ->
+            val plan = ficha.planSanitario
             val mascota = ficha.mascota
             
-            if (fecha == manana) {
-                enviarPush(mascota.tutor.id!!, "💉 Vacuna mañana", "Recuerda que a ${mascota.nombre} le toca vacuna mañana (${fmt(fecha)})")
-            } else if (fecha == enUnaSemana) {
-                enviarPush(mascota.tutor.id!!, "📅 Vacuna próxima", "En 7 días le toca vacuna a ${mascota.nombre}. ¡Agenda tu hora!")
+            // 1. Recordatorio Vacuna
+            if (plan.esVacuna && plan.fechaProximaVacuna == recordatorioEn) {
+                notificationService.enviarNotificacion(
+                    userId = mascota.tutor.id!!,
+                    titulo = "💉 Vacuna próxima para ${mascota.nombre}",
+                    cuerpo = "Recuerda que en 7 días corresponde el refuerzo de: ${plan.nombreVacuna}",
+                    data = mapOf("mascotaId" to mascota.id.toString(), "type" to "salud_vacuna")
+                )
             }
-        }
 
-        // 2. Controles
-        fichas.filter { it.planSanitario.fechaProximoControl != null }.forEach { ficha ->
-            val fecha = ficha.planSanitario.fechaProximoControl!!
-            val mascota = ficha.mascota
-
-            if (fecha == manana) {
-                enviarPush(mascota.tutor.id!!, "🩺 Control mañana", "Mañana toca control veterinario para ${mascota.nombre}")
+            // 2. Recordatorio Control
+            if (plan.fechaProximoControl == recordatorioEn) {
+                notificationService.enviarNotificacion(
+                    userId = mascota.tutor.id!!,
+                    titulo = "🩺 Control médico para ${mascota.nombre}",
+                    cuerpo = "Su próximo control preventivo está programado para el día $recordatorioEn",
+                    data = mapOf("mascotaId" to mascota.id.toString(), "type" to "salud_control")
+                )
             }
         }
     }
-
-    private fun enviarPush(userId: java.util.UUID, titulo: String, body: String) {
-        try {
-            notificationService.enviarNotificacion(userId, titulo, body, mapOf("type" to "salud"))
-        } catch (e: Exception) {
-            logger.warn("Error enviando push salud a user $userId: ${e.message}")
-        }
-    }
-
-    private fun fmt(date: LocalDate) = date.format(DateTimeFormatter.ofPattern("dd/MM"))
 }

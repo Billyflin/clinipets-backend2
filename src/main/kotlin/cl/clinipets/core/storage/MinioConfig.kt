@@ -12,7 +12,7 @@ import org.springframework.context.annotation.Configuration
 import org.springframework.context.event.EventListener
 
 @Configuration
-@ConditionalOnProperty(name = ["minio.enabled"], havingValue = "true", matchIfMissing = true)
+@ConditionalOnProperty(name = ["storage.type"], havingValue = "minio")
 class MinioConfig {
 
     private val logger = LoggerFactory.getLogger(MinioConfig::class.java)

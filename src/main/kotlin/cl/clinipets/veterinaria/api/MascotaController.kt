@@ -85,6 +85,22 @@ class MascotaController(
         return ResponseEntity.ok(response)
     }
 
+    @Operation(summary = "Buscar mascotas con filtros avanzados (Staff/Admin)", operationId = "buscarMascotas")
+    @GetMapping("/buscar")
+    @PreAuthorize("hasAnyRole('ADMIN', 'STAFF')")
+    fun buscar(
+        @RequestParam(required = false) nombre: String?,
+        @RequestParam(required = false) especie: cl.clinipets.veterinaria.domain.Especie?,
+        @RequestParam(required = false) raza: String?,
+        @RequestParam(required = false) esterilizado: Boolean?,
+        @RequestParam(required = false) tutorId: UUID?,
+        @RequestParam(required = false) chip: String?
+    ): ResponseEntity<List<MascotaResponse>> {
+        logger.info("[BUSCAR_MASCOTAS] Filtros - Nombre: $nombre, Especie: $especie, Raza: $raza, Esterilizado: $esterilizado")
+        val response = mascotaService.buscar(nombre, especie, raza, esterilizado, tutorId, chip)
+        return ResponseEntity.ok(response)
+    }
+
     @Operation(summary = "Obtener mascota", operationId = "obtenerMascota")
     @ApiResponses(
         ApiResponse(responseCode = "200", description = "Mascota encontrada"),

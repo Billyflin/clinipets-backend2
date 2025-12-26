@@ -151,7 +151,7 @@ fun Cita.toResponse() = CitaResponse(
     fechaHoraFin = fechaHoraFin,
     estado = estado,
     precioFinal = precioFinal,
-    saldoPendiente = if (estado == EstadoCita.FINALIZADA) BigDecimal.ZERO else precioFinal,
+    saldoPendiente = saldoPendiente(),
     detalles = detalles.map { it.toResponse() },
     tutorId = tutor.id!!,
     origen = origen,
@@ -167,8 +167,8 @@ fun Cita.toDetalladaResponse() = CitaDetalladaResponse(
     estado = estado,
     precioFinal = precioFinal,
     saldoPendiente = when (estado) {
-        EstadoCita.FINALIZADA, EstadoCita.CANCELADA -> BigDecimal.ZERO
-        else -> precioFinal
+        EstadoCita.CANCELADA -> BigDecimal.ZERO
+        else -> saldoPendiente()
     },
     detalles = detalles.map { it.toResponse() },
     tutorId = tutor.id!!,
