@@ -44,9 +44,14 @@ class ClinipetsIntegrityTests {
     @Autowired
     private lateinit var objectMapper: ObjectMapper
     @Autowired
-    private lateinit var citaRepository: CitaRepository
-    @Autowired
     private lateinit var insumoRepository: InsumoRepository
+
+    @Autowired
+    private lateinit var loteInsumoRepository: cl.clinipets.servicios.domain.LoteInsumoRepository
+
+    @Autowired
+    private lateinit var citaRepository: CitaRepository
+
     @Autowired
     private lateinit var servicioMedicoRepository: ServicioMedicoRepository
     @Autowired
@@ -95,15 +100,27 @@ class ClinipetsIntegrityTests {
             )
         )
 
-        val insumo = insumoRepository.saveAndFlush(
-            Insumo(
-                nombre = "Gasas Esterilizadas",
-                stockActual = 10.0,
-                stockMinimo = 5.0,
-                unidadMedida = "unidades"
-            )
-        )
-        testInsumoId = insumo.id!!
+        this.testInsumoId = insumoRepository.saveAndFlush(
+            Insumo(nombre = "Gasas Esterilizadas", stockActual = 2.0, stockMinimo = 1.0, unidadMedida = "Unidad")
+        ).id!!
+
+        val insumo = insumoRepository.findById(testInsumoId).get()
+
+        // Crear lotes para el insumo (2 unidades totales en lotes)
+        loteInsumoRepository.saveAndFlush(cl.clinipets.servicios.domain.LoteInsumo(
+            insumo = insumo,
+            codigoLote = "L1",
+            fechaVencimiento = java.time.LocalDate.now().plusMonths(1),
+            cantidadInicial = 1.0,
+            cantidadActual = 1.0
+        ))
+        loteInsumoRepository.saveAndFlush(cl.clinipets.servicios.domain.LoteInsumo(
+            insumo = insumo,
+            codigoLote = "L2",
+            fechaVencimiento = java.time.LocalDate.now().plusMonths(2),
+            cantidadInicial = 1.0,
+            cantidadActual = 1.0
+        ))
 
         val servicio = servicioMedicoRepository.saveAndFlush(
             ServicioMedico(
@@ -209,8 +226,9 @@ class ClinipetsIntegrityTests {
         )
             .andExpect(status().isBadRequest)
 
-        val insumo = insumoRepository.findById(testInsumoId).get()
-        assertEquals(10.0, insumo.stockActual)
+        // 3. Verificar que el stock NO disminuyó (Rollback exitoso)
+        val stockFinal = insumoRepository.findById(testInsumoId).get().stockActual
+        assertEquals(2.0, stockFinal)
     }
 
     @Test

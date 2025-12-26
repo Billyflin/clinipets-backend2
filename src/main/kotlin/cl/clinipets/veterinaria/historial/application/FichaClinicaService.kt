@@ -2,6 +2,8 @@ package cl.clinipets.veterinaria.historial.application
 
 import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.EstadoCita
+import cl.clinipets.agendamiento.domain.EstadoDetalleCita
+import cl.clinipets.core.web.ConflictException
 import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
@@ -10,6 +12,7 @@ import cl.clinipets.veterinaria.historial.domain.FichaClinica
 import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
 import cl.clinipets.veterinaria.historial.domain.PlanSanitario
 import cl.clinipets.veterinaria.historial.domain.SignosVitalesData
+import cl.clinipets.veterinaria.historial.domain.RecetaMedica
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
@@ -22,7 +25,11 @@ class FichaClinicaService(
     private val fichaRepository: FichaClinicaRepository,
     private val mascotaRepository: MascotaRepository,
     private val citaRepository: CitaRepository,
-    private val userRepository: UserRepository
+    private val userRepository: UserRepository,
+    private val hitoMedicoRepository: cl.clinipets.veterinaria.domain.HitoMedicoRepository,
+    private val inventarioService: cl.clinipets.servicios.application.InventarioService,
+    private val insumoRepository: cl.clinipets.servicios.domain.InsumoRepository,
+    private val recetaMedicaRepository: cl.clinipets.veterinaria.historial.domain.RecetaMedicaRepository
 ) {
     private val logger = LoggerFactory.getLogger(FichaClinicaService::class.java)
 
@@ -35,9 +42,54 @@ class FichaClinicaService(
         val autor = userRepository.findById(autorId)
             .orElseThrow { NotFoundException("Usuario autor no encontrado") }
 
+        // 1. Actualizar Marcadores e Hitos
+        request.marcadores?.forEach { (k, v) ->
+            val valorAnterior = mascota.marcadores[k]
+            if (valorAnterior != v) {
+                logger.info("[CLINICAL_RULES] Actualizando marcador: {} -> {} para mascota {}", k, v, mascota.nombre)
+                mascota.marcadores[k] = v
+                
+                hitoMedicoRepository.save(cl.clinipets.veterinaria.domain.HitoMedico(
+                    mascota = mascota,
+                    marcador = k,
+                    valorAnterior = valorAnterior,
+                    valorNuevo = v,
+                    motivo = "Actualización via Ficha Clínica",
+                    citaId = request.citaId
+                ))
+            }
+        }
+
         // Cargar Cita si existe
         val citaEntity = request.citaId?.let { 
             citaRepository.findById(it).orElse(null) 
+        }
+
+        // 2. Procesar Exclusiones Clínicas si hay cita activa
+        citaEntity?.let { cita ->
+            // Buscar servicios cuya condición de marcador ya no se cumpla
+            val detallesParaCancelar = cita.detalles.filter { detalle ->
+                val s = detalle.servicio
+                if (s.condicionMarcadorClave != null) {
+                    val valorActual = mascota.marcadores[s.condicionMarcadorClave]
+                    valorActual != s.condicionMarcadorValor && detalle.estado == EstadoDetalleCita.PROGRAMADO
+                } else false
+            }
+
+            detallesParaCancelar.forEach { detalle ->
+                logger.warn("[CLINICAL_RULES] Cancelando servicio '{}' por contraindicación clínica (Marcador {} != {})", 
+                    detalle.servicio.nombre, detalle.servicio.condicionMarcadorClave, detalle.servicio.condicionMarcadorValor)
+                detalle.estado = EstadoDetalleCita.CANCELADO_CLINICO
+                
+                // DEVOLUCIÓN DE STOCK (Pilar 2)
+                inventarioService.devolverStock(detalle.servicio)
+                logger.info("[CLINICAL_RULES] Stock devuelto para servicio cancelado: {}", detalle.servicio.nombre)
+            }
+
+            if (detallesParaCancelar.isNotEmpty()) {
+                cita.recalcularPrecioFinal()
+                logger.info("[CLINICAL_RULES] Precio de cita recalclulado tras exclusiones.")
+            }
         }
 
         // Lógica de Alerta Veterinaria (Ej: Fiebre)
@@ -77,7 +129,7 @@ class FichaClinicaService(
                 fechaAtencion = request.fechaAtencion,
                 motivoConsulta = request.motivoConsulta,
                 anamnesis = request.anamnesis,
-                hallazgosObjetivos = request.hallazgosObjetivos,
+                examenFisico = request.examenFisico?.toEntity() ?: cl.clinipets.veterinaria.historial.domain.ExamenFisico(),
                 avaluoClinico = request.avaluoClinico,
                 planTratamiento = request.planTratamiento,
                 signosVitales = signosVitales,
@@ -86,6 +138,11 @@ class FichaClinicaService(
                 autor = autor
             )
         )
+
+        // Procesar recetas si vienen
+        if (request.recetas.isNotEmpty()) {
+            procesarRecetas(ficha, request.recetas)
+        }
 
         // Si hay una cita asociada, moverla a EN_ATENCION si aún está CONFIRMADA
         request.citaId?.let { cId ->
@@ -103,6 +160,45 @@ class FichaClinicaService(
 
         logger.info("[FICHA_SERVICE] Ficha estructurada guardada con ID: {}", ficha.id)
         return ficha.toResponse()
+    }
+
+    private fun procesarRecetas(ficha: FichaClinica, recetasRequest: List<RecetaRequest>) {
+        recetasRequest.forEach { rr ->
+            val receta = RecetaMedica(ficha = ficha, observaciones = rr.observaciones)
+            rr.items.forEach { ir ->
+                val insumo = insumoRepository.findById(ir.insumoId)
+                    .orElseThrow { NotFoundException("Insumo no encontrado: ${ir.insumoId}") }
+
+                // VALIDACIÓN CLÍNICA: Contraindicaciones
+                insumo.contraindicacionMarcador?.let { marcador ->
+                    val valorActual = ficha.mascota.marcadores[marcador]
+                    if (valorActual != null && (valorActual.equals("SI", true) || valorActual.equals("POSITIVO", true))) {
+                        throw ConflictException("CONTRAINDICACIÓN: No se puede recetar ${insumo.nombre}. La mascota tiene marcador $marcador activo.")
+                    }
+                }
+
+                val item = cl.clinipets.veterinaria.historial.domain.ItemPrescripcion(
+                    receta = receta,
+                    insumo = insumo,
+                    dosis = ir.dosis,
+                    frecuencia = ir.frecuencia,
+                    duracion = ir.duracion,
+                    cantidadADespachar = ir.cantidadADespachar
+                )
+                receta.items.add(item)
+
+                // Consumir Stock inmediatamente (porque se asume que se entrega en box o farmacia)
+                if (ir.cantidadADespachar > 0) {
+                    inventarioService.consumirStockInsumo(
+                        insumoId = insumo.id!!,
+                        cantidad = ir.cantidadADespachar,
+                        referencia = "Receta en Ficha ${ficha.id}"
+                    )
+                }
+            }
+            ficha.recetas.add(receta)
+            recetaMedicaRepository.save(receta)
+        }
     }
 
     @Transactional
@@ -131,7 +227,7 @@ class FichaClinicaService(
 
         val updated = ficha.copy(
             anamnesis = request.anamnesis ?: ficha.anamnesis,
-            hallazgosObjetivos = request.hallazgosObjetivos ?: ficha.hallazgosObjetivos,
+            examenFisico = request.examenFisico?.toEntity() ?: ficha.examenFisico,
             avaluoClinico = request.avaluoClinico ?: ficha.avaluoClinico,
             planTratamiento = request.planTratamiento ?: ficha.planTratamiento,
             observaciones = request.observaciones ?: ficha.observaciones,
@@ -142,6 +238,26 @@ class FichaClinicaService(
         // Actualizar peso en mascota si cambió
         if (request.pesoRegistrado != null && request.pesoRegistrado > 0) {
             ficha.mascota.pesoActual = request.pesoRegistrado
+        }
+
+        // Actualizar marcadores si vienen
+        request.marcadores?.forEach { (k, v) ->
+            val valorAnterior = ficha.mascota.marcadores[k]
+            if (valorAnterior != v) {
+                ficha.mascota.marcadores[k] = v
+                hitoMedicoRepository.save(cl.clinipets.veterinaria.domain.HitoMedico(
+                    mascota = ficha.mascota,
+                    marcador = k,
+                    valorAnterior = valorAnterior,
+                    valorNuevo = v,
+                    motivo = "Actualización via Edición de Ficha"
+                ))
+            }
+        }
+
+        // Procesar recetas nuevas
+        request.recetas?.let {
+            procesarRecetas(ficha, it)
         }
 
         return fichaRepository.save(updated).toResponse()

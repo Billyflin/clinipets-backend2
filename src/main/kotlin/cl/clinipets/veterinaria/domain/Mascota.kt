@@ -35,7 +35,7 @@ data class Mascota(
     val especie: Especie,
 
     @Column(nullable = true)
-    var pesoActual: Double?,
+    var pesoActual: Double? = null,
 
     @Column(nullable = false)
     var raza: String = "Mestizo",
@@ -72,6 +72,24 @@ data class Mascota(
     @Column(nullable = true)
     var fechaUltimoTestRetroviral: LocalDate? = null,
 
-    @Column(nullable = true, length = 2000)
-    var observacionesClinicas: String? = null
-) : AuditableEntity()
+        @Column(nullable = true, length = 2000)
+
+        var observacionesClinicas: String? = null,
+
+    
+
+        @NotAudited
+
+        @ElementCollection(fetch = FetchType.EAGER)
+
+        @CollectionTable(name = "mascota_marcadores", joinColumns = [JoinColumn(name = "mascota_id")])
+
+        @MapKeyColumn(name = "clave")
+
+        @Column(name = "valor")
+
+        var marcadores: MutableMap<String, String> = mutableMapOf()
+
+    ) : AuditableEntity()
+
+    

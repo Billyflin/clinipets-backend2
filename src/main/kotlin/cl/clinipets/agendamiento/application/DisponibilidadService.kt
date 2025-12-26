@@ -13,21 +13,32 @@ import java.time.LocalDate
 import java.time.LocalTime
 import java.time.ZoneId
 import java.time.temporal.ChronoUnit
+import java.util.UUID
 
 @Service
 class DisponibilidadService(
     private val citaRepository: CitaRepository,
     private val bloqueoAgendaRepository: BloqueoAgendaRepository,
     private val clinicProperties: ClinicProperties,
-    private val clinicZoneId: ZoneId
+    private val clinicZoneId: ZoneId,
+    private val inventarioService: cl.clinipets.servicios.application.InventarioService
 ) {
     private val logger = LoggerFactory.getLogger(DisponibilidadService::class.java)
     private val intervaloMinutos = 15L
     private val bufferMinutosMismoDia = 60L
 
     @Transactional(readOnly = true)
-    fun obtenerSlots(fecha: LocalDate, duracionMinutos: Int): List<Instant> {
+    fun obtenerSlots(fecha: LocalDate, duracionMinutos: Int, servicioId: UUID? = null): List<Instant> {
         logger.info(">>> Calculando disponibilidad. Fecha: $fecha, Duración: $duracionMinutos min, Zona: $clinicZoneId")
+
+        // 1. Validar stock primero si se especificó servicio
+        if (servicioId != null) {
+            val hayStock = inventarioService.validarDisponibilidadReserva(servicioId, 1)
+            if (!hayStock) {
+                logger.warn(">>> Servicio $servicioId no tiene stock disponible (considerando reservas)")
+                return emptyList()
+            }
+        }
 
         val ventana = obtenerVentanaPara(fecha)
 

@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test
 import org.mockito.Mockito.`when`
 import org.mockito.Mockito.mock
 import org.mockito.kotlin.any
+import org.mockito.kotlin.eq
 import java.math.BigDecimal
 import java.time.*
 import java.util.*
@@ -18,6 +19,7 @@ class DisponibilidadServiceTest {
 
     private lateinit var citaRepository: CitaRepository
     private lateinit var bloqueoAgendaRepository: BloqueoAgendaRepository
+    private lateinit var inventarioService: cl.clinipets.servicios.application.InventarioService
     private lateinit var clinicProperties: ClinicProperties
     private lateinit var availabilityService: DisponibilidadService
     private val zoneId = ZoneId.of("America/Santiago")
@@ -26,17 +28,31 @@ class DisponibilidadServiceTest {
     fun setup() {
         citaRepository = mock(CitaRepository::class.java)
         bloqueoAgendaRepository = mock(BloqueoAgendaRepository::class.java)
+        inventarioService = mock(cl.clinipets.servicios.application.InventarioService::class.java)
+        `when`(inventarioService.validarDisponibilidadReserva(any(), any())).thenReturn(true) // Default OK
+
         clinicProperties = ClinicProperties(
             schedule = mutableMapOf(
-                "MONDAY" to "09:00-11:00" // Rango corto para test fácil
+                "MONDAY" to "09:00-11:00"
             )
         )
         availabilityService = DisponibilidadService(
             citaRepository,
             bloqueoAgendaRepository,
             clinicProperties,
-            zoneId
+            zoneId,
+            inventarioService
         )
+    }
+
+    @Test
+    fun `should return empty if service has no stock`() {
+        val monday = LocalDate.of(2025, 12, 29)
+        val sid = UUID.randomUUID()
+        `when`(inventarioService.validarDisponibilidadReserva(eq(sid), any())).thenReturn(false)
+
+        val slots = availabilityService.obtenerSlots(monday, 30, sid)
+        assertTrue(slots.isEmpty())
     }
 
     @Test

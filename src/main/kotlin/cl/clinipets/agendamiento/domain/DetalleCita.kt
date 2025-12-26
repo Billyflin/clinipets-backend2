@@ -26,7 +26,11 @@ class DetalleCita(
     val mascota: Mascota?,
 
     @Column(nullable = false)
-    var precioUnitario: BigDecimal
+    var precioUnitario: BigDecimal,
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 32)
+    var estado: EstadoDetalleCita = EstadoDetalleCita.PROGRAMADO
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

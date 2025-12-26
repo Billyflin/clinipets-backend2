@@ -80,6 +80,15 @@ class Cita(
 
     fun saldoPendiente(): BigDecimal = precioFinal.subtract(totalPagado()).max(BigDecimal.ZERO)
 
+    /**
+     * Recalcula el precio final sumando solo los servicios que no han sido cancelados clínicamente.
+     */
+    fun recalcularPrecioFinal() {
+        this.precioFinal = detalles
+            .filter { it.estado != EstadoDetalleCita.CANCELADO_CLINICO }
+            .fold(BigDecimal.ZERO) { acc, d -> acc.add(d.precioUnitario) }
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Cita) return false

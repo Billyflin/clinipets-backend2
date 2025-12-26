@@ -16,10 +16,11 @@ import org.awaitility.kotlin.untilAsserted
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Test
+import org.mockito.Mockito.atLeastOnce
+import org.mockito.Mockito.verify
 import org.mockito.kotlin.any
-import org.mockito.kotlin.atLeastOnce
-import org.mockito.kotlin.verify
 import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.test.annotation.DirtiesContext
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean
 import java.math.BigDecimal
 import java.time.Duration
@@ -27,6 +28,7 @@ import java.time.Instant
 import java.time.LocalDate
 import java.util.*
 
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class ReservaServiceIntegrationTest : AbstractIntegrationTest() {
 
     @Autowired

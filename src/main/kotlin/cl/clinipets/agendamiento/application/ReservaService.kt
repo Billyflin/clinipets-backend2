@@ -133,13 +133,13 @@ class ReservaService(
         val tutorUser = userRepository.findById(tutor.userId)
             .orElseThrow { NotFoundException("Usuario tutor no encontrado") }
 
-        // === VALIDAR STOCK ANTES DE PROCEDER ===
-        logger.info("[RESERVA] Validando disponibilidad de stock...")
+        // === VALIDAR STOCK ANTES DE PROCEDER (Considerando Reservas) ===
+        logger.info("[RESERVA] Validando disponibilidad de stock (con reservas)...")
         detalles.forEach { item ->
-            val disponible = inventarioService.validarDisponibilidadStock(item.servicioId, item.cantidad)
+            val disponible = inventarioService.validarDisponibilidadReserva(item.servicioId, item.cantidad)
             if (!disponible) {
                 val servicio = serviciosMap[item.servicioId]!!
-                throw BadRequestException("Stock insuficiente para: ${servicio.nombre}")
+                throw BadRequestException("Stock insuficiente (incluyendo reservas actuales) para: ${servicio.nombre}")
             }
         }
         logger.info("[RESERVA] Stock validado correctamente")

@@ -56,7 +56,8 @@ class ReservaDtosTest {
             nombreServicio = "Servicio Test",
             mascotaId = UUID.randomUUID(),
             nombreMascota = "Mascota Test",
-            precioUnitario = BigDecimal("5000")
+            precioUnitario = BigDecimal("5000"),
+            estado = cl.clinipets.agendamiento.domain.EstadoDetalleCita.PROGRAMADO
         )
 
         val response = CitaResponse(

@@ -24,8 +24,22 @@ class Insumo(
     var stockMinimo: Double,
 
     @Column(nullable = false)
-    var unidadMedida: String
+    var unidadMedida: String,
+
+    @Column(length = 50)
+    var contraindicacionMarcador: String? = null, // Ej: "ALERGIA_PENICILINA"
+
+    @OneToMany(mappedBy = "insumo", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.LAZY)
+    val lotes: MutableList<LoteInsumo> = mutableListOf()
 ) : AuditableEntity() {
+
+    /**
+     * Retorna el stock total sumando solo los lotes que no están vencidos.
+     */
+    fun stockVigente(): Double {
+        return lotes.filter { !it.estaVencido() }.sumOf { it.cantidadActual }
+    }
+
     override fun equals(other: Any?): Boolean {
         if (this === other) return true
         if (other !is Insumo) return false

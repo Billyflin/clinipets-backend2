@@ -77,7 +77,9 @@ data class DetalleCitaResponse(
     val mascotaId: UUID?,
     val nombreMascota: String?,
     @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED)
-    val precioUnitario: BigDecimal
+    val precioUnitario: BigDecimal,
+    @field:Schema(requiredMode = Schema.RequiredMode.REQUIRED, description = "Estado individual del servicio en la cita")
+    val estado: cl.clinipets.agendamiento.domain.EstadoDetalleCita
 )
 
 data class ResumenDiarioResponse(
@@ -184,5 +186,6 @@ fun DetalleCita.toResponse() = DetalleCitaResponse(
     nombreServicio = servicio.nombre,
     mascotaId = mascota?.id,
     nombreMascota = mascota?.nombre,
-    precioUnitario = precioUnitario
+    precioUnitario = precioUnitario,
+    estado = estado
 )

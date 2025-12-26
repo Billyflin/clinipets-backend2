@@ -65,7 +65,16 @@ class ServicioMedico(
 
     @OneToMany(mappedBy = "servicio", cascade = [CascadeType.ALL], orphanRemoval = true, fetch = FetchType.EAGER)
     @org.hibernate.annotations.Fetch(org.hibernate.annotations.FetchMode.SUBSELECT)
-    val insumos: MutableSet<ServicioInsumo> = mutableSetOf()
+    val insumos: MutableSet<ServicioInsumo> = mutableSetOf(),
+
+    @Column(length = 50)
+    var actualizaMarcador: String? = null,
+
+    @Column(length = 50)
+    var condicionMarcadorClave: String? = null,
+
+    @Column(length = 50)
+    var condicionMarcadorValor: String? = null
 ) : AuditableEntity() {
     fun calcularPrecioPara(mascota: Mascota): BigDecimal {
         if (!requierePeso) return precioBase

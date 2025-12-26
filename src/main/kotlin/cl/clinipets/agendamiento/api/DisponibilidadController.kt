@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestMapping
 import org.springframework.web.bind.annotation.RequestParam
 import org.springframework.web.bind.annotation.RestController
 import java.time.LocalDate
+import java.util.UUID
 
 @RestController
 @RequestMapping("/api/v1/disponibilidad")
@@ -22,15 +23,16 @@ class DisponibilidadController(
     @GetMapping
     fun obtener(
         @RequestParam("fecha") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) fecha: LocalDate,
-        @RequestParam("duracionMinutos") duracionMinutos: Int
+        @RequestParam("duracionMinutos") duracionMinutos: Int,
+        @RequestParam("servicioId", required = false) servicioId: UUID? = null
     ): ResponseEntity<DisponibilidadResponse> {
-        logger.info("[DISPONIBILIDAD] Request. Fecha: {}, Duracion: {} min", fecha, duracionMinutos)
-        val slots = disponibilidadService.obtenerSlots(fecha, duracionMinutos)
+        logger.info("[DISPONIBILIDAD] Request. Fecha: {}, Duracion: {} min, Servicio: {}", fecha, duracionMinutos, servicioId)
+        val slots = disponibilidadService.obtenerSlots(fecha, duracionMinutos, servicioId)
         logger.info("[DISPONIBILIDAD] Fin request - Slots encontrados: {}", slots.size)
         return ResponseEntity.ok(
             DisponibilidadResponse(
                 fecha = fecha,
-                servicioId = null, // Deprecated/Optional in response
+                servicioId = servicioId,
                 slots = slots
             )
         )

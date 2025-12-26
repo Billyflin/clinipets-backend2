@@ -23,7 +23,18 @@ data class HistorialCompletoResponse(
     val nombreMascota: String,
     val fichasClinicas: List<ResumenFichaDto>,
     val planPreventivo: PlanPreventivoResumen,
-    val signosVitales: EvolucionSignosVitales
+    val signosVitales: EvolucionSignosVitales,
+    val marcadoresActuales: Map<String, String>,
+    val hitosRecientes: List<HitoMedicoDto>
+)
+
+data class HitoMedicoDto(
+    val id: UUID,
+    val marcador: String,
+    val valorAnterior: String?,
+    val valorNuevo: String,
+    val fecha: Instant,
+    val motivo: String?
 )
 
 data class ResumenFichaDto(
@@ -93,7 +104,8 @@ class HistorialClinicoService(
     private val mascotaRepository: MascotaRepository,
     private val fichaClinicaRepository: FichaClinicaRepository,
     private val planPreventivoRepository: PlanPreventivoRepository,
-    private val signosVitalesRepository: SignosVitalesRepository
+    private val signosVitalesRepository: SignosVitalesRepository,
+    private val hitoMedicoRepository: cl.clinipets.veterinaria.domain.HitoMedicoRepository
 ) {
     private val logger = LoggerFactory.getLogger(HistorialClinicoService::class.java)
 
@@ -171,12 +183,27 @@ class HistorialClinicoService(
         val vitales = signosVitalesRepository.findAllByMascotaIdOrderByFechaDesc(mascotaId)
         val evolucion = analizarEvolucionSignosVitales(vitales)
 
+        // 4. Marcadores e Hitos
+        val hitos = hitoMedicoRepository.findAllByMascotaIdOrderByFechaDesc(mascotaId)
+        val hitosDto = hitos.map {
+            HitoMedicoDto(
+                id = it.id!!,
+                marcador = it.marcador,
+                valorAnterior = it.valorAnterior,
+                valorNuevo = it.valorNuevo,
+                fecha = it.fecha,
+                motivo = it.motivo
+            )
+        }
+
         return HistorialCompletoResponse(
             mascotaId = mascota.id!!,
             nombreMascota = mascota.nombre,
             fichasClinicas = fichasResumen,
             planPreventivo = planResumen,
-            signosVitales = evolucion
+            signosVitales = evolucion,
+            marcadoresActuales = mascota.marcadores,
+            hitosRecientes = hitosDto
         )
     }
 

@@ -35,6 +35,32 @@ data class PlanSanitario(
     val fechaDesparasitacion: LocalDate? = null
 )
 
+@Embeddable
+data class ExamenFisico(
+    @Column(length = 50)
+    val mucosas: String? = null,
+    @field:Column(name = "tiempo_llenado_capilar")
+    val tllc: String? = null,
+    @Column(length = 50)
+    val hidratacion: String? = null,
+    @Column(length = 50)
+    val linfonodos: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val pielAnexos: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val sistemaCardiovascular: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val sistemaRespiratorio: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val sistemaDigestivo: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val sistemaGenitourinario: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val sistemaNervioso: String? = null,
+    @field:Column(columnDefinition = "TEXT")
+    val sistemaOsteoarticular: String? = null
+)
+
 @Entity
 @Audited
 @Table(name = "fichas_clinicas")
@@ -75,11 +101,17 @@ data class FichaClinica(
     @Embedded
     val signosVitales: SignosVitalesData = SignosVitalesData(),
 
+    @Embedded
+    val examenFisico: ExamenFisico = ExamenFisico(),
+
     @Column(columnDefinition = "TEXT")
     val observaciones: String? = null,
 
     @Embedded
     val planSanitario: PlanSanitario = PlanSanitario(),
+
+    @OneToMany(mappedBy = "ficha", cascade = [CascadeType.ALL], orphanRemoval = true)
+    val recetas: MutableList<RecetaMedica> = mutableListOf(),
 
     @NotAudited
     @ManyToOne(fetch = FetchType.LAZY, optional = false)

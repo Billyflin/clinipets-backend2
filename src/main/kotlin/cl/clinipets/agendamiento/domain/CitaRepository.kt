@@ -25,5 +25,8 @@ interface CitaRepository : JpaRepository<Cita, UUID> {
     @EntityGraph(attributePaths = ["detalles", "detalles.servicio", "detalles.mascota"])
     fun findAllByMascotaId(@Param("mascotaId") mascotaId: UUID): List<Cita>
 
+    @Query("SELECT COUNT(d) FROM Cita c JOIN c.detalles d WHERE d.servicio.id = :servicioId AND c.estado IN ('CONFIRMADA', 'EN_ATENCION') AND d.estado = 'PROGRAMADO'")
+    fun countReservedStock(@Param("servicioId") servicioId: UUID): Long
+
     fun findByEstadoAndCreatedAtBefore(estado: EstadoCita, date: Instant): List<Cita>
 }
