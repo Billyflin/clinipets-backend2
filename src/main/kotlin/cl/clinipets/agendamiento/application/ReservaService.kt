@@ -339,12 +339,8 @@ class ReservaService(
 
         return try {
             val saved = transactionTemplate.execute {
-                // 1. Consumir stock
+                // 1. Registrar Signos Vitales si vienen en el request (Logic kept in Service as part of finalization)
                 cita.detalles.forEach { detalle ->
-                    logger.info("[FINALIZAR] Consumiendo stock para ${detalle.servicio.nombre}")
-                    inventarioService.consumirStock(detalle.servicio.id!!, 1, "Cita $id")
-
-                    // Registrar Signos Vitales si vienen en el request
                     val mascotaVal = detalle.mascota
                     if (mascotaVal != null) {
                         request?.signosVitales?.get(mascotaVal.id)?.let { svReq ->
@@ -363,30 +359,42 @@ class ReservaService(
                 val staffUser = userRepository.findById(staff.userId)
                     .orElseThrow { NotFoundException("Staff no encontrado") }
 
-                // 2. Solo si TODO el stock se consumió exitosamente → Finalizar
+                // 2. Actualizar estado Cita
                 cita.metodoPagoSaldo = metodoPago
                 cita.staffFinalizador = staffUser
                 cita.cambiarEstado(EstadoCita.FINALIZADA, staff.email)
                 
-                citaRepository.save(cita)
+                val savedCita = citaRepository.save(cita)
+
+                // 3. Publicar evento para efectos secundarios (Inventario, Notificaciones)
+                // Esto disparará el Listener Síncrono de Inventario. Si falla, hará rollback de todo este bloque.
+                val items = savedCita.detalles.map { 
+                    cl.clinipets.agendamiento.domain.events.CitaItem(it.servicio.id!!, 1) 
+                }
+                eventPublisher.publishEvent(cl.clinipets.agendamiento.domain.events.ConsultaFinalizadaEvent(savedCita.id!!, items))
+                
+                savedCita
             }
-            logger.info("AUDIT: Cita $id finalizada y stock descontado por staff ${staff.email}")
+            logger.info("AUDIT: Cita $id finalizada exitosamente por staff ${staff.email}")
             saved!!
-        } catch (ex: cl.clinipets.core.web.ConflictException) {
-            logger.error("[FINALIZAR] Error consumiendo stock: ${ex.message}")
+        } catch (ex: Exception) {
+            // Can be ConflictException from Inventory Listener or any other
+            logger.error("[FINALIZAR] Error durante finalización (posible stock insuficiente): ${ex.message}")
 
             // Rollback happened automatically for the transactionTemplate block.
-            // Stock is restored.
-            // We now mark as CANCELADA in a fresh transaction.
+            // We now mark as CANCELADA in a fresh transaction to reflect the failure permanently if desired,
+            // or just let it fail. The original requirement was to Cancel.
+            
+            // Re-fetch clean state
+            val cleanCita = citaRepository.findById(id).orElseThrow()
+            cleanCita.cambiarEstado(EstadoCita.CANCELADA, staff.email)
+            citaRepository.save(cleanCita)
 
-            cita.cambiarEstado(EstadoCita.CANCELADA, staff.email)
-            citaRepository.save(cita)
-
-            logger.warn("AUDIT: Cita $id marcada como CANCELADA por falta de stock al finalizar. Staff: ${staff.email}")
+            logger.warn("AUDIT: Cita $id marcada como CANCELADA por error al finalizar. Staff: ${staff.email}")
 
             throw BadRequestException(
                 "No se pudo finalizar la cita: ${ex.message}. " +
-                "El stock fue insuficiente al momento de la atención. La cita ha sido cancelada."
+                "La operación ha sido cancelada."
             )
         }
     }
