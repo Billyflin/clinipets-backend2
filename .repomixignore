@@ -1,0 +1,81 @@
+# --- Repomix Ignore: EXTREME Optimization ---
+
+# Build and Output
+build/
+bin/
+out/
+.gradle/
+.settings/
+target/
+*.jar
+*.war
+*.ear
+
+# IDEs
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.factorypath
+
+# Dependencies & Wrappers
+gradle/
+gradlew
+gradlew.bat
+
+# System files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Binary Assets & Static Media
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.pdf
+*.svg
+src/main/resources/static/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Security & Credentials
+*.jks
+*.p12
+*.key
+*.pem
+google-services.json
+firebase-adminsdk.json
+.env*
+!*.env.example
+
+# Logs and Temps
+*.log
+logs/
+tmp/
+temp/
+
+# Infrastructure (Optional: keep if you want Claude to see Docker)
+Dockerfile
+.dockerignore
+docker-compose.yml
+backend.plantuml
+
+# Reports
+reports/
+jacoco/
+
+# --- Context Logic Optimization ---
+# If you want Claude to focus ONLY on business logic, 
+# uncomment the line below to ignore ALL tests:
+# src/test/
+.env
+.env.local
+.env.development

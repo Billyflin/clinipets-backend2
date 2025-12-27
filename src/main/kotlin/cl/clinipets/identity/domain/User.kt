@@ -21,6 +21,9 @@ data class User(
     val id: UUID? = null,
 
     @Column(nullable = false, unique = true)
+    var firebaseUid: String = UUID.randomUUID().toString(),
+
+    @Column(nullable = false, unique = true)
     var email: String,
 
     @Column(nullable = false)

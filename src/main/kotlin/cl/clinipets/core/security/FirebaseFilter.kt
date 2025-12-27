@@ -19,7 +19,7 @@ class FirebaseFilter(
     private val authService: AuthService
 ) : OncePerRequestFilter() {
 
-    private val logger = LoggerFactory.getLogger(FirebaseFilter::class.java)
+    private val slf4jLogger = LoggerFactory.getLogger(FirebaseFilter::class.java)
 
     override fun doFilterInternal(
         request: HttpServletRequest,
@@ -32,6 +32,13 @@ class FirebaseFilter(
             try {
                 // 1. Verificar token con Firebase
                 val decodedToken: FirebaseToken = FirebaseAuth.getInstance().verifyIdToken(token)
+
+                if (slf4jLogger.isDebugEnabled) {
+                    slf4jLogger.debug(
+                        "[FIREBASE_FILTER] Token verificado. UID: {}, Email: {}, Claims: {}",
+                        decodedToken.uid, decodedToken.email, decodedToken.claims
+                    )
+                }
 
                 // 2. Delegar sincronización/creación al servicio
                 // Esto asegura que el usuario exista en nuestra BD y tenga el rol correcto
@@ -51,7 +58,7 @@ class FirebaseFilter(
                 SecurityContextHolder.getContext().authentication = authentication
 
             } catch (e: Exception) {
-                logger.error("[FIREBASE_AUTH] Error validando token: ${e.message}")
+                slf4jLogger.error("[FIREBASE_AUTH] Error validando token: ${e.message}")
                 SecurityContextHolder.clearContext()
                 // Opcional: response.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid Token")
                 // Pero dejamos que SecurityFilterChain maneje el rechazo si es necesario.

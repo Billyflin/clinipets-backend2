@@ -6,8 +6,10 @@ import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.identity.api.ProfileResponse
 import cl.clinipets.identity.api.UserUpdateRequest
 import cl.clinipets.identity.domain.*
+import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseToken
 import org.slf4j.LoggerFactory
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.util.*
@@ -23,78 +25,117 @@ class AuthService(
     @Transactional
     fun syncFirebaseUser(token: FirebaseToken): User {
         val uid = token.uid
-        val email = token.email // Puede ser null si es Phone Auth puro sin email vinculado en Firebase
-        val phone = token.claims["phone_number"] as? String
-        val name = token.name ?: "Usuario App"
-        val picture = token.picture
+        var email = token.email
+        var phone = token.claims["phone_number"] as? String
+        var name = token.name ?: "Usuario App"
+        var picture = token.picture
 
-        // Normalizar teléfono si existe
-        val normalizedPhone = phone
-
-        // Determinar si es Admin/Staff por email
-        val isAdmin = email != null && adminProperties.adminEmails.contains(email.lowercase())
-        val targetRole = if (isAdmin) UserRole.STAFF else UserRole.CLIENT
-
-        // Buscar usuarios existentes
-        val userByEmail = email?.let { userRepository.findByEmailIgnoreCase(it) }
-        val userByPhone = normalizedPhone?.let { userRepository.findByPhone(it) }
-
-        var user: User? = null
-
-        if (userByEmail != null && userByPhone != null) {
-            if (userByEmail.id != userByPhone.id) {
-                // Caso de Fusión: Existen dos usuarios distintos.
-                // Priorizamos la cuenta con Email (Google) como principal y fusionamos la de teléfono.
-                logger.info("[AUTH] Fusionando cuenta Teléfono (${userByPhone.id}) en cuenta Email (${userByEmail.id})")
-                user = accountMergeService.mergeUsers(source = userByPhone, target = userByEmail)
-            } else {
-                // Son el mismo usuario
-                user = userByEmail
+        // Si el email es nulo en el token, intentamos obtenerlo del perfil de Firebase directamente
+        if (email == null) {
+            try {
+                val fbUser = FirebaseAuth.getInstance().getUser(uid)
+                email = fbUser.email
+                if (phone == null) phone = fbUser.phoneNumber
+                if (name == "Usuario App") name = fbUser.displayName ?: "Usuario App"
+                if (picture == null) picture = fbUser.photoUrl
+                logger.debug("[AUTH] Email recuperado del Admin SDK: {}", email)
+            } catch (e: Exception) {
+                logger.warn("[AUTH] No se pudo obtener info adicional de Firebase para UID: {}", uid)
             }
-        } else if (userByEmail != null) {
-            user = userByEmail
-        } else if (userByPhone != null) {
-            user = userByPhone
+        }
+
+        logger.debug(
+            "[AUTH] Sincronizando usuario Firebase. UID: {}, Email: {}, Phone: {}, Name: {}",
+            uid,
+            email,
+            phone,
+            name
+        )
+
+        // 1. Buscar por Firebase UID
+        var user = userRepository.findByFirebaseUid(uid)
+
+        if (user == null) {
+            // 2. Si no existe por UID, buscamos por email/phone
+            val userByEmail = email?.let { userRepository.findByEmailIgnoreCase(it) }
+            val userByPhone = phone?.let { userRepository.findByPhone(it) }
+
+            if (userByEmail != null && userByPhone != null) {
+                if (userByEmail.id != userByPhone.id) {
+                    logger.info("[AUTH] Fusionando cuenta Teléfono (${userByPhone.id}) en cuenta Email (${userByEmail.id})")
+                    user = accountMergeService.mergeUsers(source = userByPhone, target = userByEmail)
+                } else {
+                    user = userByEmail
+                }
+            } else if (userByEmail != null) {
+                user = userByEmail
+            } else if (userByPhone != null) {
+                user = userByPhone
+            }
         }
 
         if (user == null) {
-            logger.info("[AUTH] Creando usuario nuevo. UID: $uid, Email: $email, Phone: $normalizedPhone")
-            val finalEmail = email ?: "${normalizedPhone?.replace("+", "")}@phone.clinipets.local"
+            // 3. Crear usuario nuevo
+            val finalEmail = email ?: "${(phone ?: uid).replace("+", "").replace(" ", "")}@phone.clinipets.local"
+            logger.info("[AUTH] Creando usuario nuevo. UID: {}, Email Final: {}", uid, finalEmail)
+            
             val newAuth = if (email != null) AuthProvider.GOOGLE else AuthProvider.PHONE
 
             user = User(
+                firebaseUid = uid,
                 email = finalEmail,
                 name = name,
                 passwordHash = "{noop}firebase_$uid",
-                role = targetRole,
+                role = if (email != null && adminProperties.adminEmails.contains(email.lowercase())) UserRole.STAFF else UserRole.CLIENT,
                 photoUrl = picture,
-                phone = normalizedPhone,
+                phone = phone,
                 phoneVerified = true,
                 authProvider = newAuth
             )
         } else {
-            // Actualizar datos
+            // 4. Actualizar datos
+            user.firebaseUid = uid 
+
             if (picture != null && user.photoUrl != picture) {
                 user.photoUrl = picture
             }
+
+            // Actualizar nombre si el actual es el genérico y el token trae uno real
+            if (name != "Usuario App" && (user.name == "Usuario App" || user.name.isBlank())) {
+                user.name = name
+            }
+
+            val isAdmin = email != null && adminProperties.adminEmails.contains(email.lowercase())
             if (isAdmin && user.role != UserRole.STAFF) {
                 user.role = UserRole.STAFF
             }
-            if (normalizedPhone != null && user.phone != normalizedPhone) {
-                user.phone = normalizedPhone
+
+            if (phone != null && user.phone != phone) {
+                user.phone = phone
                 user.phoneVerified = true
             }
             
-            // Upgrade de Provider / Email
             if (user.authProvider == AuthProvider.OTP || user.authProvider == AuthProvider.WHATSAPP) {
-                 user.authProvider = if (email != null) AuthProvider.GOOGLE else AuthProvider.PHONE
+                user.authProvider =
+                    if (email != null || token.claims["firebase"]?.let { (it as Map<*, *>)["sign_in_provider"] == "google.com" } == true)
+                        AuthProvider.GOOGLE else AuthProvider.PHONE
             }
-            if (email != null && user.email != email) {
+
+            // Solo actualizamos el email si recibimos uno real y el actual es un placeholder
+            if (email != null && (user.email != email || user.email.endsWith("@phone.clinipets.local"))) {
+                logger.info("[AUTH] Actualizando email de {} a {}", user.email, email)
                 user.email = email
             }
         }
-        
-        return userRepository.save(user)
+
+        return try {
+            userRepository.save(user)
+        } catch (e: DataIntegrityViolationException) {
+            logger.warn("[AUTH] Conflicto de concurrencia detectado para UID: $uid. Re-intentando fetch.")
+            userRepository.findByFirebaseUid(uid)
+                ?: userRepository.findByEmailIgnoreCase(email ?: "")
+                ?: throw e
+        }
     }
 
     @Transactional(readOnly = true)

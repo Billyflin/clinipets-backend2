@@ -338,11 +338,13 @@ class DataSeeder(
     private fun seedUsersAndPets() {
         val phone = "56945272297"
         val email = "billymartinezc@gmail.com"
+        val realUid = "SwwdW0b4AvScmlcODzbVNpvPFHT2"
 
-        var user = userRepository.findByPhone(phone)
+        var user = userRepository.findByEmailIgnoreCase(email) ?: userRepository.findByPhone(phone)
 
         if (user == null) {
             user = User(
+                firebaseUid = realUid,
                 name = "Billy Developer",
                 email = email,
                 phone = phone,
@@ -350,6 +352,20 @@ class DataSeeder(
                 role = UserRole.ADMIN
             )
             user = userRepository.save(user)
+        } else {
+            // Asegurar que el usuario existente tenga el UID y el rol correcto
+            var changed = false
+            if (user.firebaseUid != realUid) {
+                user.firebaseUid = realUid
+                changed = true
+            }
+            if (user.role != UserRole.ADMIN) {
+                user.role = UserRole.ADMIN
+                changed = true
+            }
+            if (changed) {
+                userRepository.save(user)
+            }
         }
 
         val mascotas = mascotaRepository.findAllByTutorId(user.id!!)
