@@ -39,7 +39,7 @@ class PricingCalculatorTest {
             especiesPermitidas = mutableSetOf(Especie.PERRO)
         )
 
-        whenever(promoEngineService.calcularDescuentos(any(), any())).thenReturn(
+        whenever(promoEngineService.calcularDescuentos(any(), any(), any())).thenReturn(
             mapOf(
                 servicioId to DetalleCalculado(
                     servicioId = servicioId,
@@ -78,7 +78,7 @@ class PricingCalculatorTest {
             especiesPermitidas = mutableSetOf(Especie.GATO)
         )
 
-        whenever(promoEngineService.calcularDescuentos(any(), any())).thenReturn(
+        whenever(promoEngineService.calcularDescuentos(any(), any(), any())).thenReturn(
             mapOf(
                 servicioId to DetalleCalculado(
                     servicioId = servicioId,

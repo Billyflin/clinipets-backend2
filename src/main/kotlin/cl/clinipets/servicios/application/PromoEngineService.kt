@@ -24,27 +24,25 @@ class PromoEngineService(
 
     fun calcularDescuentos(
         detalles: List<DetalleReservaRequest>,
-        fechaCita: LocalDate
+        fechaCita: LocalDate,
+        preCalculatedPrices: Map<UUID, BigDecimal> = emptyMap()
     ): Map<UUID, DetalleCalculado> {
         // 1. Cargar datos base de los servicios para tener los precios originales
         val serviciosIds = detalles.map { it.servicioId }.toSet()
         val serviciosInfo = servicioMedicoRepository.findAllById(serviciosIds)
             .associateBy { it.id!! }
 
-        // Inicializar resultados con precios originales
+        // Inicializar resultados con precios (usando preCalculated o base)
         val resultado = detalles.associate { req ->
             val servicio = serviciosInfo[req.servicioId]
                 ?: throw IllegalArgumentException("Servicio no encontrado: ${req.servicioId}")
 
-            // Nota: Aquí estamos usando precioBase. Si el servicio requiere peso y cálculo complejo,
-            // idealmente deberíamos recibir el precio ya calculado o calcularlo aquí si tuviéramos la mascota.
-            // Para este MVP de motor de promociones, usaremos precioBase como punto de partida.
-            val precioBase = servicio.precioBase
+            val precioAPromocionar = preCalculatedPrices[req.servicioId] ?: servicio.precioBase
 
             req.servicioId to DetalleCalculado(
                 servicioId = req.servicioId,
-                precioFinal = precioBase,
-                precioOriginal = precioBase
+                precioFinal = precioAPromocionar,
+                precioOriginal = precioAPromocionar
             )
         }.toMutableMap()
 

@@ -7,7 +7,7 @@ import java.util.UUID
 
 @Repository
 interface ServicioMedicoRepository : JpaRepository<ServicioMedico, UUID> {
-    @EntityGraph(attributePaths = ["reglas", "especiesPermitidas", "serviciosRequeridosIds", "insumos", "insumos.insumo"])
+    @EntityGraph(attributePaths = ["reglas", "especiesPermitidas", "serviciosRequeridos", "insumos", "insumos.insumo"])
     fun findByActivoTrue(): List<ServicioMedico>
     fun existsByNombreIgnoreCase(nombre: String): Boolean
 }

@@ -30,15 +30,15 @@ class RecordatorioScheduler(
 
         val ahora = Instant.now()
         val en24Horas = ahora.plus(24, ChronoUnit.HOURS)
-        val en25Horas = en24Horas.plus(1, ChronoUnit.HOURS)
+        val en48Horas = en24Horas.plus(24, ChronoUnit.HOURS)
 
-        // Buscar citas entre 24-25 horas desde ahora
+        // Buscar citas en las próximas 24-48 horas (todo el día de mañana aproximadamente)
         val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(
             en24Horas,
-            en25Horas
+            en48Horas
         ).filter { it.estado == EstadoCita.CONFIRMADA }
 
-        logger.info("[SCHEDULER] Encontradas ${citas.size} citas para recordatorio")
+        logger.info("[SCHEDULER] Encontradas ${citas.size} citas para recordatorio diario")
 
         citas.forEach { cita ->
             val fechaFormateada = cita.fechaHoraInicio
@@ -67,11 +67,11 @@ class RecordatorioScheduler(
 
         val ahora = Instant.now()
         val en1Hora = ahora.plus(1, ChronoUnit.HOURS)
-        val en90Minutos = en1Hora.plus(30, ChronoUnit.MINUTES)
+        val en2Horas = en1Hora.plus(1, ChronoUnit.HOURS)
 
         val citas = citaRepository.findAllByFechaHoraInicioBetweenOrderByFechaHoraInicioAsc(
             en1Hora,
-            en90Minutos
+            en2Horas
         ).filter { it.estado == EstadoCita.CONFIRMADA }
 
         logger.info("[SCHEDULER] Encontradas ${citas.size} citas próximas")

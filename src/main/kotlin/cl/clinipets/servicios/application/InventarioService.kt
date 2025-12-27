@@ -131,7 +131,8 @@ class InventarioService(
             }
 
             // Actualizar stock plano para compatibilidad/alertas
-            insumo.stockActual = insumo.lotes.sumOf { it.cantidadActual }
+            val consumido = (si.cantidadRequerida * cantidad) - remanente
+            insumo.stockActual -= consumido
             insumoRepository.save(insumo)
         }
     }
@@ -164,7 +165,8 @@ class InventarioService(
             throw ConflictException("Stock insuficiente para el insumo ${insumo.nombre}. Faltaron $remanente vigentes.")
         }
 
-        insumo.stockActual = insumo.lotes.sumOf { it.cantidadActual }
+        val consumido = cantidad - remanente
+        insumo.stockActual -= consumido
         insumoRepository.save(insumo)
     }
 
@@ -181,12 +183,14 @@ class InventarioService(
         servicioFresco.insumos.forEach { si ->
             val insumo = insumoRepository.findByIdWithLock(si.insumo.id!!)
                 ?: return@forEach
-            
+
+            val cantidadADevolver = si.cantidadRequerida * cantidad
+
             // Intentar devolver al primer lote vigente disponible
             val lotes = loteInsumoRepository.findVigentesOrderByVencimiento(insumo.id!!)
             if (lotes.isNotEmpty()) {
                 val lote = lotes[0]
-                lote.cantidadActual += si.cantidadRequerida * cantidad
+                lote.cantidadActual += cantidadADevolver
                 loteInsumoRepository.save(lote)
             } else {
                 // Si no hay lotes vigentes, creamos un lote de emergencia para devoluciones
@@ -194,12 +198,12 @@ class InventarioService(
                     insumo = insumo,
                     codigoLote = "DEV-${UUID.randomUUID().toString().take(8)}",
                     fechaVencimiento = LocalDate.now().plusMonths(6),
-                    cantidadInicial = si.cantidadRequerida * cantidad,
-                    cantidadActual = si.cantidadRequerida * cantidad
+                    cantidadInicial = cantidadADevolver,
+                    cantidadActual = cantidadADevolver
                 ))
             }
-            
-            insumo.stockActual = insumo.lotes.sumOf { it.cantidadActual }
+
+            insumo.stockActual += cantidadADevolver
             insumoRepository.save(insumo)
         }
     }

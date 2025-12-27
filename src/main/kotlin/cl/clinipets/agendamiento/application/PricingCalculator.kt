@@ -34,20 +34,20 @@ class PricingCalculator(
         }
 
         val detalleRequest = DetalleReservaRequest(servicioId, mascota?.id)
-        val descuentos = promoEngineService.calcularDescuentos(listOf(detalleRequest), fecha)
+        val descuentos = promoEngineService.calcularDescuentos(
+            listOf(detalleRequest),
+            fecha,
+            mapOf(servicioId to precioBase)
+        )
         val detallePromo = descuentos[servicioId]
 
-        val deltaDescuento = detallePromo
-            ?.let { it.precioOriginal.subtract(it.precioFinal).max(BigDecimal.ZERO) }
-            ?: BigDecimal.ZERO
-
-        val precioFinal = precioBase.subtract(deltaDescuento).max(BigDecimal.ZERO)
+        val precioFinal = (detallePromo?.precioFinal ?: precioBase).max(BigDecimal.ZERO)
 
         return PrecioCalculado(
             precioFinal = precioFinal,
             precioOriginal = precioBase,
             abono = servicio.precioAbono ?: BigDecimal.ZERO,
-            descuentoAplicado = deltaDescuento > BigDecimal.ZERO,
+            descuentoAplicado = (detallePromo?.precioFinal ?: precioBase) < precioBase,
             notas = detallePromo?.notas?.toList() ?: emptyList()
         )
     }
