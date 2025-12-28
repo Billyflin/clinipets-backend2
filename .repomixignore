@@ -75,7 +75,7 @@ jacoco/
 # --- Context Logic Optimization ---
 # If you want Claude to focus ONLY on business logic, 
 # uncomment the line below to ignore ALL tests:
-# src/test/
+src/test/
 .env
 .env.local
 .env.development

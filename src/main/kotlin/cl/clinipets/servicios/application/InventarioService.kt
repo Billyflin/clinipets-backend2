@@ -2,9 +2,8 @@ package cl.clinipets.servicios.application
 
 import cl.clinipets.core.web.ConflictException
 import cl.clinipets.core.web.NotFoundException
-import cl.clinipets.servicios.domain.InsumoRepository
-import cl.clinipets.servicios.domain.ServicioMedico
-import cl.clinipets.servicios.domain.ServicioMedicoRepository
+import cl.clinipets.servicios.api.*
+import cl.clinipets.servicios.domain.*
 import org.slf4j.LoggerFactory
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -16,9 +15,99 @@ class InventarioService(
     private val servicioMedicoRepository: ServicioMedicoRepository,
     private val insumoRepository: InsumoRepository,
     private val citaRepository: cl.clinipets.agendamiento.domain.CitaRepository,
-    private val loteInsumoRepository: cl.clinipets.servicios.domain.LoteInsumoRepository
+    private val loteInsumoRepository: LoteInsumoRepository,
+    private val servicioInsumoRepository: ServicioInsumoRepository
 ) {
     private val logger = LoggerFactory.getLogger(InventarioService::class.java)
+
+    @Transactional(readOnly = true)
+    fun listarInsumos(): List<InsumoResponse> {
+        return insumoRepository.findAll().map { it.toResponse() }
+    }
+
+    @Transactional
+    fun crearInsumo(request: InsumoCreateRequest): InsumoResponse {
+        logger.info("[INVENTARIO] Creando nuevo insumo: {}", request.nombre)
+        val insumo = Insumo(
+            nombre = request.nombre,
+            stockActual = 0.0,
+            stockMinimo = request.stockMinimo,
+            unidadMedida = request.unidadMedida,
+            contraindicacionMarcador = request.contraindicacionMarcador
+        )
+        return insumoRepository.save(insumo).toResponse()
+    }
+
+    @Transactional
+    fun actualizarInsumo(id: UUID, request: InsumoUpdateRequest): InsumoResponse {
+        logger.info("[INVENTARIO] Actualizando insumo: {}", id)
+        val insumo = insumoRepository.findById(id)
+            .orElseThrow { NotFoundException("Insumo no encontrado: $id") }
+
+        request.nombre?.let { insumo.nombre = it }
+        request.stockMinimo?.let { insumo.stockMinimo = it }
+        request.unidadMedida?.let { insumo.unidadMedida = it }
+        request.contraindicacionMarcador?.let { insumo.contraindicacionMarcador = it }
+
+        return insumoRepository.save(insumo).toResponse()
+    }
+
+    @Transactional
+    fun eliminarInsumo(id: UUID) {
+        logger.info("[INVENTARIO] Intentando eliminar insumo: {}", id)
+        val insumo = insumoRepository.findById(id)
+            .orElseThrow { NotFoundException("Insumo no encontrado: $id") }
+
+        // Validar si está en uso por servicios activos
+        val enUso = servicioInsumoRepository.findByInsumoId(id).any { it.servicio.activo }
+        if (enUso) {
+            throw ConflictException("No se puede eliminar el insumo porque está siendo utilizado por servicios activos")
+        }
+
+        insumoRepository.delete(insumo)
+        logger.info("[INVENTARIO] Insumo {} eliminado", id)
+    }
+
+    @Transactional
+    fun agregarLote(insumoId: UUID, request: LoteCreateRequest): InsumoResponse {
+        logger.info("[INVENTARIO] Agregando lote {} al insumo {}", request.codigoLote, insumoId)
+        val insumo = insumoRepository.findByIdWithLock(insumoId)
+            ?: throw NotFoundException("Insumo no encontrado: $insumoId")
+
+        val nuevoLote = LoteInsumo(
+            insumo = insumo,
+            codigoLote = request.codigoLote,
+            fechaVencimiento = request.fechaVencimiento,
+            cantidadInicial = request.cantidad,
+            cantidadActual = request.cantidad
+        )
+
+        insumo.lotes.add(nuevoLote)
+        insumo.stockActual += request.cantidad
+
+        return insumoRepository.save(insumo).toResponse()
+    }
+
+    @Transactional
+    fun ajustarStockLote(loteId: UUID, request: LoteStockAjusteRequest): InsumoResponse {
+        logger.info(
+            "[INVENTARIO] Ajustando stock de lote {}. Nueva cantidad: {}. Motivo: {}",
+            loteId,
+            request.nuevaCantidad,
+            request.motivo
+        )
+        val lote = loteInsumoRepository.findById(loteId)
+            .orElseThrow { NotFoundException("Lote no encontrado: $loteId") }
+
+        val diferencia = request.nuevaCantidad - lote.cantidadActual
+        lote.cantidadActual = request.nuevaCantidad
+
+        val insumo = lote.insumo
+        insumo.stockActual += diferencia
+
+        loteInsumoRepository.save(lote)
+        return insumoRepository.save(insumo).toResponse()
+    }
 
     /**
      * Valida si hay stock disponible considerando las citas ya reservadas (No pagadas).
@@ -194,13 +283,15 @@ class InventarioService(
                 loteInsumoRepository.save(lote)
             } else {
                 // Si no hay lotes vigentes, creamos un lote de emergencia para devoluciones
-                loteInsumoRepository.save(cl.clinipets.servicios.domain.LoteInsumo(
-                    insumo = insumo,
-                    codigoLote = "DEV-${UUID.randomUUID().toString().take(8)}",
-                    fechaVencimiento = LocalDate.now().plusMonths(6),
-                    cantidadInicial = cantidadADevolver,
-                    cantidadActual = cantidadADevolver
-                ))
+                loteInsumoRepository.save(
+                    LoteInsumo(
+                        insumo = insumo,
+                        codigoLote = "DEV-${UUID.randomUUID().toString().take(8)}",
+                        fechaVencimiento = LocalDate.now().plusMonths(6),
+                        cantidadInicial = cantidadADevolver,
+                        cantidadActual = cantidadADevolver
+                    )
+                )
             }
 
             insumo.stockActual += cantidadADevolver

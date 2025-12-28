@@ -1,11 +1,17 @@
 package cl.clinipets.backend.agendamiento.application
 
-import cl.clinipets.agendamiento.api.ReservaItemRequest
 import cl.clinipets.agendamiento.api.FinalizarCitaRequest
+import cl.clinipets.agendamiento.api.ReservaItemRequest
 import cl.clinipets.agendamiento.application.ReservaService
 import cl.clinipets.agendamiento.domain.CitaRepository
 import cl.clinipets.agendamiento.domain.EstadoCita
 import cl.clinipets.agendamiento.domain.OrigenCita
+import cl.clinipets.core.security.JwtPayload
+import cl.clinipets.core.storage.StorageService
+import cl.clinipets.core.web.BadRequestException
+import cl.clinipets.identity.domain.User
+import cl.clinipets.identity.domain.UserRepository
+import cl.clinipets.identity.domain.UserRole
 import cl.clinipets.servicios.application.InventarioService
 import cl.clinipets.servicios.domain.ReglaPrecio
 import cl.clinipets.servicios.domain.ServicioMedico
@@ -14,12 +20,6 @@ import cl.clinipets.veterinaria.domain.Especie
 import cl.clinipets.veterinaria.domain.Mascota
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.domain.Sexo
-import cl.clinipets.core.security.JwtPayload
-import cl.clinipets.core.storage.StorageService
-import cl.clinipets.core.web.BadRequestException
-import cl.clinipets.identity.domain.User
-import cl.clinipets.identity.domain.UserRepository
-import cl.clinipets.identity.domain.UserRole
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.BeforeEach
@@ -32,8 +32,7 @@ import java.math.BigDecimal
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
-import java.time.temporal.ChronoUnit
-import java.util.UUID
+import java.util.*
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @TestPropertySource(
@@ -273,10 +272,8 @@ class ReservaServiceTest(
     }
 
     private fun siguienteSabadoAMas(hoy: LocalDate): LocalDate {
-        var fecha = hoy
-        while (fecha.dayOfWeek.value != 6) { // 6 is Saturday
-            fecha = fecha.plusDays(1)
-        }
-        return fecha
+        // Forzamos una fecha futura fija para evitar problemas con el buffer de 60 min
+        // si el test se corre un sábado tarde.
+        return LocalDate.of(2026, 1, 10) // Un sábado en 2026
     }
 }

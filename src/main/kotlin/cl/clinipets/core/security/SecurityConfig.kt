@@ -34,6 +34,7 @@ class SecurityConfig(
                     "/v3/api-docs/**",
                     "/swagger-ui/**"
                 ).permitAll()
+                    .requestMatchers(org.springframework.http.HttpMethod.GET, "/api/v1/servicios").permitAll()
                     // All /api/v1/auth endpoints require authentication (provided by FirebaseFilter)
                     .requestMatchers("/api/v1/reservas").authenticated()
                     .anyRequest().authenticated()

@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository
 import org.springframework.stereotype.Repository
 import java.math.BigDecimal
 import java.time.LocalDate
-import java.util.UUID
+import java.util.*
 
 enum class TipoDescuento {
     PRECIO_FIJO,
@@ -30,28 +30,28 @@ data class PromocionBeneficio(
 
 @Entity
 @Table(name = "promociones")
-data class Promocion(
+class Promocion(
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     val id: UUID? = null,
 
     @Column(nullable = false)
-    val nombre: String,
+    var nombre: String,
 
     @Column(length = 500)
-    val descripcion: String? = null,
+    var descripcion: String? = null,
 
     @Column(nullable = false)
-    val fechaInicio: LocalDate,
+    var fechaInicio: LocalDate,
 
     @Column(nullable = false)
-    val fechaFin: LocalDate,
+    var fechaFin: LocalDate,
 
     @Column(name = "dias_permitidos", length = 50)
-    val diasPermitidos: String? = null, // Formato "MON,TUE"
+    var diasPermitidos: String? = null, // Formato "MON,TUE"
 
     @Column(nullable = false)
-    val activa: Boolean = true,
+    var activa: Boolean = true,
 
     @ManyToMany(fetch = FetchType.EAGER)
     @JoinTable(

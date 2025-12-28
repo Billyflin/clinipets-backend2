@@ -18,12 +18,14 @@ class InventarioServiceTest {
     private val insumoRepository: InsumoRepository = mock()
     private val citaRepository: CitaRepository = mock()
     private val loteInsumoRepository: LoteInsumoRepository = mock()
+    private val servicioInsumoRepository: ServicioInsumoRepository = mock()
 
     private val inventarioService = InventarioService(
         servicioMedicoRepository,
         insumoRepository,
         citaRepository,
-        loteInsumoRepository
+        loteInsumoRepository,
+        servicioInsumoRepository
     )
 
     private fun createServicio(id: UUID = UUID.randomUUID(), stock: Int? = null): ServicioMedico {

@@ -8,17 +8,13 @@ import cl.clinipets.core.web.NotFoundException
 import cl.clinipets.identity.domain.UserRepository
 import cl.clinipets.veterinaria.domain.MascotaRepository
 import cl.clinipets.veterinaria.historial.api.*
-import cl.clinipets.veterinaria.historial.domain.FichaClinica
-import cl.clinipets.veterinaria.historial.domain.FichaClinicaRepository
-import cl.clinipets.veterinaria.historial.domain.PlanSanitario
-import cl.clinipets.veterinaria.historial.domain.SignosVitalesData
-import cl.clinipets.veterinaria.historial.domain.RecetaMedica
+import cl.clinipets.veterinaria.historial.domain.*
 import org.slf4j.LoggerFactory
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
-import java.util.UUID
+import java.util.*
 
 @Service
 class FichaClinicaService(
@@ -29,7 +25,7 @@ class FichaClinicaService(
     private val hitoMedicoRepository: cl.clinipets.veterinaria.domain.HitoMedicoRepository,
     private val inventarioService: cl.clinipets.servicios.application.InventarioService,
     private val insumoRepository: cl.clinipets.servicios.domain.InsumoRepository,
-    private val recetaMedicaRepository: cl.clinipets.veterinaria.historial.domain.RecetaMedicaRepository
+    private val recetaMedicaRepository: RecetaMedicaRepository
 ) {
     private val logger = LoggerFactory.getLogger(FichaClinicaService::class.java)
 
@@ -129,7 +125,7 @@ class FichaClinicaService(
                 fechaAtencion = request.fechaAtencion,
                 motivoConsulta = request.motivoConsulta,
                 anamnesis = request.anamnesis,
-                examenFisico = request.examenFisico?.toEntity() ?: cl.clinipets.veterinaria.historial.domain.ExamenFisico(),
+                examenFisico = request.examenFisico?.toEntity() ?: ExamenFisico(),
                 avaluoClinico = request.avaluoClinico,
                 planTratamiento = request.planTratamiento,
                 signosVitales = signosVitales,
@@ -177,7 +173,7 @@ class FichaClinicaService(
                     }
                 }
 
-                val item = cl.clinipets.veterinaria.historial.domain.ItemPrescripcion(
+                val item = ItemPrescripcion(
                     receta = receta,
                     insumo = insumo,
                     dosis = ir.dosis,
@@ -209,25 +205,24 @@ class FichaClinicaService(
 
         // Recalcular alerta si cambió temperatura
         val nuevaTemp = request.temperatura ?: ficha.signosVitales.temperatura
-        val nuevaAlerta = nuevaTemp?.let { it > 39.5 } ?: ficha.signosVitales.alertaVeterinaria
+        nuevaTemp?.let { it > 39.5 } ?: ficha.signosVitales.alertaVeterinaria
 
-        val nuevosSignos = ficha.signosVitales.copy(
-            pesoRegistrado = request.pesoRegistrado ?: ficha.signosVitales.pesoRegistrado,
-            temperatura = request.temperatura ?: ficha.signosVitales.temperatura,
-            frecuenciaCardiaca = request.frecuenciaCardiaca ?: ficha.signosVitales.frecuenciaCardiaca,
-            frecuenciaRespiratoria = request.frecuenciaRespiratoria ?: ficha.signosVitales.frecuenciaRespiratoria,
-            alertaVeterinaria = nuevaAlerta
+        val nuevosSignos = (ficha.signosVitales ?: SignosVitalesData()).copy(
+            pesoRegistrado = request.pesoRegistrado ?: ficha.signosVitales?.pesoRegistrado,
+            temperatura = request.temperatura ?: ficha.signosVitales?.temperatura,
+            frecuenciaCardiaca = request.frecuenciaCardiaca ?: ficha.signosVitales?.frecuenciaCardiaca,
+            frecuenciaRespiratoria = request.frecuenciaRespiratoria ?: ficha.signosVitales?.frecuenciaRespiratoria
         )
 
-        val nuevoPlan = ficha.planSanitario.copy(
-            fechaProximaVacuna = request.fechaProximaVacuna ?: ficha.planSanitario.fechaProximaVacuna,
-            fechaProximoControl = request.fechaProximoControl ?: ficha.planSanitario.fechaProximoControl,
-            fechaDesparasitacion = request.fechaDesparasitacion ?: ficha.planSanitario.fechaDesparasitacion
+        val nuevoPlan = (ficha.planSanitario ?: PlanSanitario()).copy(
+            fechaProximaVacuna = request.fechaProximaVacuna ?: ficha.planSanitario?.fechaProximaVacuna,
+            fechaProximoControl = request.fechaProximoControl ?: ficha.planSanitario?.fechaProximoControl,
+            fechaDesparasitacion = request.fechaDesparasitacion ?: ficha.planSanitario?.fechaDesparasitacion
         )
 
         val updated = ficha.copy(
             anamnesis = request.anamnesis ?: ficha.anamnesis,
-            examenFisico = request.examenFisico?.toEntity() ?: ficha.examenFisico,
+            examenFisico = request.examenFisico?.toEntity() ?: (ficha.examenFisico ?: ExamenFisico()),
             avaluoClinico = request.avaluoClinico ?: ficha.avaluoClinico,
             planTratamiento = request.planTratamiento ?: ficha.planTratamiento,
             observaciones = request.observaciones ?: ficha.observaciones,

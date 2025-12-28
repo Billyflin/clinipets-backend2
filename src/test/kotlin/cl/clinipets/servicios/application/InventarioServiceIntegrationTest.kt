@@ -2,14 +2,18 @@ package cl.clinipets.servicios.application
 
 import cl.clinipets.AbstractIntegrationTest
 import cl.clinipets.core.web.ConflictException
+import cl.clinipets.servicios.api.InsumoCreateRequest
+import cl.clinipets.servicios.api.InsumoUpdateRequest
+import cl.clinipets.servicios.api.LoteCreateRequest
+import cl.clinipets.servicios.api.LoteStockAjusteRequest
 import cl.clinipets.servicios.domain.*
 import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.test.annotation.DirtiesContext
 import java.math.BigDecimal
 import java.time.LocalDate
-import java.util.*
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
 class InventarioServiceIntegrationTest : AbstractIntegrationTest() {
@@ -25,6 +29,70 @@ class InventarioServiceIntegrationTest : AbstractIntegrationTest() {
 
     @Autowired
     private lateinit var loteInsumoRepository: LoteInsumoRepository
+
+    @BeforeEach
+    fun setup() {
+        loteInsumoRepository.deleteAll()
+        servicioMedicoRepository.deleteAll()
+        insumoRepository.deleteAll()
+    }
+
+    @Test
+    fun `crear insumo exitosamente`() {
+        val request = InsumoCreateRequest("Nuevo Insumo", 10.0, "U", "contra")
+        val response = inventarioService.crearInsumo(request)
+
+        assertNotNull(response.id)
+        assertEquals("Nuevo Insumo", response.nombre)
+        assertEquals(10.0, response.stockMinimo)
+        assertEquals("contra", response.contraindicacionMarcador)
+    }
+
+    @Test
+    fun `actualizar insumo exitosamente`() {
+        val creado = inventarioService.crearInsumo(InsumoCreateRequest("Orig", 5.0, "U"))
+        val update = InsumoUpdateRequest("Mod", 15.0, "ml", "new-contra")
+
+        val actualizado = inventarioService.actualizarInsumo(creado.id, update)
+
+        assertEquals("Mod", actualizado.nombre)
+        assertEquals(15.0, actualizado.stockMinimo)
+        assertEquals("ml", actualizado.unidadMedida)
+        assertEquals("new-contra", actualizado.contraindicacionMarcador)
+    }
+
+    @Test
+    fun `eliminar insumo exitosamente`() {
+        val creado = inventarioService.crearInsumo(InsumoCreateRequest("Delete Me", 1.0, "U"))
+        inventarioService.eliminarInsumo(creado.id)
+
+        assertFalse(insumoRepository.existsById(creado.id))
+    }
+
+    @Test
+    fun `agregar lote a insumo`() {
+        val insumo = inventarioService.crearInsumo(InsumoCreateRequest("Insumo Lote", 1.0, "U"))
+        val request = LoteCreateRequest("L-001", LocalDate.now().plusYears(1), 50.0)
+
+        val response = inventarioService.agregarLote(insumo.id, request)
+
+        assertEquals(50.0, response.stockActual)
+        assertEquals(1, response.lotes.size)
+        assertEquals("L-001", response.lotes[0].codigoLote)
+    }
+
+    @Test
+    fun `ajustar stock de lote`() {
+        val insumo = inventarioService.crearInsumo(InsumoCreateRequest("Insumo Ajuste", 1.0, "U"))
+        val loteRes =
+            inventarioService.agregarLote(insumo.id, LoteCreateRequest("L-1", LocalDate.now().plusDays(10), 10.0))
+        val loteId = loteRes.lotes[0].id
+
+        val response = inventarioService.ajustarStockLote(loteId, LoteStockAjusteRequest(25.0, "Ajuste manual"))
+
+        assertEquals(25.0, response.stockActual)
+        assertEquals(25.0, response.lotes[0].cantidadActual)
+    }
 
     @Test
     fun `should validate stock availability for service with direct stock`() {
